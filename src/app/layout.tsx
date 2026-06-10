@@ -18,12 +18,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AI Resume Tracker - Land More Interviews",
-  description: "Parse jobs from emails, tailor your resume in seconds, prepare with smart questions, and negotiate your offer—all in one place.",
-  keywords: ["resume tracker", "job application tracker", "AI resume", "interview preparation", "job search"],
+  title: "ResumeIQ - Intelligent Resume & Career Management",
+  description: "ATS optimization, resume intelligence, job match analysis, application tracking, and optional AI tailoring — all at zero cost.",
+  keywords: ["resume tracker", "ATS score", "resume intelligence", "job match analysis", "career management", "resume builder"],
   authors: [{ name: "Prithwish Karmakar" }],
   creator: "Prithwish Karmakar",
-  publisher: "AI Resume Tracker",
+  publisher: "ResumeIQ",
   formatDetection: {
     email: false,
     address: false,
@@ -37,22 +37,22 @@ export const metadata: Metadata = {
     type: 'website',
     locale: 'en_US',
     url: 'https://ai-resume-tracker-lake.vercel.app',
-    siteName: 'AI Resume Tracker',
-    title: 'AI Resume Tracker - Land More Interviews',
-    description: 'Parse jobs from emails, tailor your resume in seconds, prepare with smart questions, and negotiate your offer—all in one place.',
+    siteName: 'ResumeIQ',
+    title: 'ResumeIQ - Intelligent Resume & Career Management',
+    description: 'ATS optimization, resume intelligence, job match analysis, application tracking, and optional AI tailoring.',
     images: [
       {
         url: '/api/og',
         width: 1200,
         height: 630,
-        alt: 'AI Resume Tracker - Land more interviews with an AI-powered job tracker',
+        alt: 'ResumeIQ - Intelligent Resume & Career Management Platform',
       },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'AI Resume Tracker - Land More Interviews',
-    description: 'Parse jobs from emails, tailor your resume in seconds, prepare with smart questions, and negotiate your offer—all in one place.',
+    title: 'ResumeIQ - Intelligent Resume & Career Management',
+    description: 'ATS optimization, resume intelligence, job match analysis, and application tracking.',
     images: ['/api/og'],
     creator: '@prithwish_rgb',
   },

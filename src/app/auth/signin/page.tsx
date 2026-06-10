@@ -44,7 +44,7 @@ function SignInForm() {
           </h1>
           <p className="text-gray-200 mb-6">
             Sign in to continue with{" "}
-            <span className="font-bold">AI Resume Tracker</span>
+            <span className="font-bold">ResumeIQ</span>
           </p>
 
           {error && (

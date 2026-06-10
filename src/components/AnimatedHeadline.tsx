@@ -3,10 +3,10 @@
 import { useEffect, useState } from "react";
 
 const phrases = [
-  "Track applications effortlessly",
-  "Tailor resumes in seconds",
-  "Ace your interviews",
-  "Negotiate with confidence",
+  "ATS-optimized resume scoring",
+  "Job match analysis in seconds",
+  "Track every application",
+  "Career progress insights",
 ];
 
 export function AnimatedHeadline() {

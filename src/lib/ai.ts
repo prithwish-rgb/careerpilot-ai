@@ -1,286 +1,434 @@
 /**
- * AI integration — uses Anthropic Claude via direct fetch (no SDK dependency).
- * Falls back to heuristics when ANTHROPIC_API_KEY is absent so the app
- * stays fully usable for job-tracking without an API key.
- *
- * All AI routes import from this file; prompts are versioned here.
+ * ResumeIQ AI Layer — optional Google Gemini integration.
+ * All functions fall back to rule-based intelligence when GEMINI_API_KEY is absent.
  */
 
-const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
-const MODEL              = "claude-sonnet-4-20250514";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import {
+  analyzeJobMatch,
+  tailorBlocksRuleBased,
+  suggestBullets,
+  heuristicParseJob,
+} from "@/lib/intelligence";
+import type { ResumeBlock as MongoResumeBlock } from "@/lib/mongodb";
 
-// ─── Availability ─────────────────────────────────────────────────────────────
-export const isAIEnabled = (): boolean => Boolean(process.env.ANTHROPIC_API_KEY);
+const apiKey = process.env.GEMINI_API_KEY || "";
+const modelName = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+
+export const isAIEnabled = (): boolean => Boolean(apiKey);
 
 export class AIDisabledError extends Error {
   constructor() {
-    super(
-      "AI features require ANTHROPIC_API_KEY. " +
-      "Add it to .env.local or Vercel → Settings → Environment Variables. " +
-      "Get a free key at https://console.anthropic.com/"
-    );
+    super("AI enhancement unavailable — using rule-based analysis instead.");
     this.name = "AIDisabledError";
   }
 }
 
-// ─── Core HTTP caller ─────────────────────────────────────────────────────────
-async function callClaude(
-  userPrompt: string,
-  systemPrompt: string,
-  maxTokens = 2000,
-  attempt    = 0
-): Promise<string> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+let _client: GoogleGenerativeAI | null = null;
+function client(): GoogleGenerativeAI {
   if (!apiKey) throw new AIDisabledError();
-
-  const res = await fetch(ANTHROPIC_API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type":      "application/json",
-      "x-api-key":         apiKey,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model:      MODEL,
-      max_tokens: maxTokens,
-      system:     systemPrompt,
-      messages:   [{ role: "user", content: userPrompt }],
-    }),
-  });
-
-  // Retry once on 429 / 5xx
-  if (!res.ok) {
-    if ((res.status === 429 || res.status >= 500) && attempt === 0) {
-      await new Promise(r => setTimeout(r, 900));
-      return callClaude(userPrompt, systemPrompt, maxTokens, 1);
-    }
-    const err = await res.json().catch(() => ({})) as { error?: { message?: string } };
-    throw new Error(err.error?.message || `Claude API error ${res.status}`);
-  }
-
-  const data = await res.json() as { content?: { type: string; text: string }[] };
-  const text = data.content?.find(b => b.type === "text")?.text;
-  if (!text) throw new Error("Empty response from Claude");
-  return text;
+  if (!_client) _client = new GoogleGenerativeAI(apiKey);
+  return _client;
 }
 
-/**
- * Parse JSON from Claude response — handles markdown fences and trailing commas.
- */
-function extractJSON<T>(raw: string): T {
-  const cleaned = raw
-    .trim()
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/\s*```$/i, "")
-    .trim();
+function getModel() {
+  return client().getGenerativeModel({
+    model: modelName,
+    generationConfig: { responseMimeType: "application/json", temperature: 0.4 },
+  });
+}
+
+function extractJSON<T>(text: string): T {
+  const cleaned = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
   try {
     return JSON.parse(cleaned) as T;
   } catch {
     const start = cleaned.search(/[{[]/);
-    const end   = Math.max(cleaned.lastIndexOf("}"), cleaned.lastIndexOf("]"));
+    const end = Math.max(cleaned.lastIndexOf("}"), cleaned.lastIndexOf("]"));
     if (start !== -1 && end > start) {
-      const slice = cleaned.slice(start, end + 1).replace(/,(\s*[}\]])/g, "$1");
+      const slice = cleaned.slice(start, end + 1).replace(/,\s*([}\]])/g, "$1");
       return JSON.parse(slice) as T;
     }
-    throw new Error(`Model did not return valid JSON. Raw (first 300): ${raw.slice(0, 300)}`);
+    throw new Error(`Model did not return valid JSON. Raw: ${text.slice(0, 200)}`);
   }
 }
 
-async function callJSON<T>(
-  userPrompt: string,
-  systemPrompt: string,
-  maxTokens = 2000
-): Promise<T> {
-  const raw = await callClaude(userPrompt, systemPrompt, maxTokens);
-  return extractJSON<T>(raw);
+async function generateJSON<T>(prompt: string, attempts = 2): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const r = await getModel().generateContent(prompt);
+      return extractJSON<T>(r.response.text());
+    } catch (e) {
+      lastErr = e;
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!/429|5\d\d|fetch failed|ECONN/i.test(msg)) throw e;
+      await new Promise(res => setTimeout(res, 600 * (i + 1)));
+    }
+  }
+  throw lastErr;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 1. Resume Tailoring
-// ─────────────────────────────────────────────────────────────────────────────
-const SYS_TAILOR = `You are an expert ATS-optimised resume writer with 15+ years of recruiting experience.
-Rewrite the candidate's resume to maximally match the job description.
-Rules:
-- DO NOT fabricate experience, employers, dates, degrees, or metrics
-- Mirror the JD's exact keywords and phrasing where the candidate genuinely has that skill
-- Use strong action verbs; quantify outcomes where the original already implies a metric
-- Output ONLY valid JSON — no markdown fences, no prose outside the JSON`;
+// Re-export heuristic parser from intelligence for jobs route
+export { heuristicParseJob as parseJobDescriptionFallback };
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface TailorResult {
-  tailoredContent: string;
-  matchScore:       number;
-  missingKeywords:  string[];
-  suggestions:      string[];
+  tailoredContent?: string;
+  blocks?: MongoResumeBlock[];
+  matchScore: number;
+  missingKeywords: string[];
+  suggestions: string[];
+  source: "ai" | "rules";
 }
 
+export interface MatchResult {
+  verdict: string;
+  score: number;
+  strengths: string[];
+  gaps: string[];
+  recommendation: string;
+  source: "ai" | "rules";
+}
+
+export interface ParsedJob {
+  title: string;
+  company: string;
+  location: string;
+  salaryRange: string;
+  requiredSkills: string[];
+  niceToHaveSkills: string[];
+  responsibilities: string[];
+  qualifications: string[];
+  workMode: string;
+  summary: string;
+  keywords: string[];
+}
+
+export interface InterviewResult {
+  technical: string[];
+  behavioral: string[];
+  systemDesign: string[];
+  situational: string[];
+  tipsForEachCategory: Record<string, string>;
+}
+
+export interface NegotiationResult {
+  script: string;
+  keyPoints: string[];
+  counterOffer: { base: string; bonus: string; equity: string };
+  marketInsight: string;
+  doList: string[];
+  dontList: string[];
+}
+
+export interface ExtractedEmail {
+  isJobPosting: boolean;
+  title: string;
+  company: string;
+  location: string;
+  applyUrl: string;
+  deadline: string;
+  salary: string;
+  keySkills: string[];
+  summary: string;
+}
+
+export interface BulletResult {
+  bullets: string[];
+  source: "ai" | "rules";
+}
+
+// ─── Resume Tailoring ───────────────────────────────────────────────────────
+
+export async function tailorResumeBlocks(
+  blocks: MongoResumeBlock[],
+  jobDescription: string
+): Promise<TailorResult> {
+  if (!isAIEnabled()) {
+    const result = tailorBlocksRuleBased(blocks, jobDescription);
+    return { ...result, source: "rules" };
+  }
+
+  try {
+    const prompt = `You are an ATS resume expert. Rewrite resume blocks to match the job description.
+Rules: DO NOT fabricate experience. Preserve block id and type. Mirror JD keywords where candidate has the skill.
+Return ONLY valid JSON array of blocks: [{"id":"...","type":"summary|experience|project|education|skill","content":"...","tags":[]}]
+
+JOB DESCRIPTION:
+"""${jobDescription.slice(0, 4000)}"""
+
+RESUME BLOCKS:
+${JSON.stringify(blocks).slice(0, 8000)}`;
+
+    const tailoredBlocks = await generateJSON<MongoResumeBlock[]>(prompt);
+    const match = analyzeJobMatch(blocks, jobDescription);
+    return {
+      blocks: tailoredBlocks,
+      matchScore: match.matchPercent,
+      missingKeywords: match.missingKeywords.slice(0, 8),
+      suggestions: match.recommendations,
+      source: "ai",
+    };
+  } catch {
+    const result = tailorBlocksRuleBased(blocks, jobDescription);
+    return { ...result, source: "rules" };
+  }
+}
+
+/** Legacy text-based tailor — wraps block tailor for string resumes */
 export async function tailorResume(
   resumeText: string,
   jobDescription: string
 ): Promise<TailorResult> {
-  if (!isAIEnabled()) throw new AIDisabledError();
-  const prompt = `JOB DESCRIPTION:\n${jobDescription.slice(0, 4000)}\n\nCURRENT RESUME:\n${resumeText.slice(0, 6000)}\n\nReturn JSON:\n{"tailoredContent":"<full rewritten resume with labelled sections>","matchScore":<0-100>,"missingKeywords":["<keyword JD needs but resume lacks>"],"suggestions":["<tip>"]}`;
-  return callJSON<TailorResult>(prompt, SYS_TAILOR, 3500);
+  const simpleBlocks: MongoResumeBlock[] = [{ id: "body", type: "summary", content: resumeText } as MongoResumeBlock];
+  const result = await tailorResumeBlocks(simpleBlocks, jobDescription);
+  if (result.blocks) {
+    return {
+      tailoredContent: result.blocks.map(b => b.content).join("\n\n"),
+      matchScore: result.matchScore,
+      missingKeywords: result.missingKeywords,
+      suggestions: result.suggestions,
+      source: result.source,
+    };
+  }
+  return result;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 2. Interview Question Generator
-// ─────────────────────────────────────────────────────────────────────────────
-const SYS_INTERVIEW = `You are a senior engineering interviewer at a top tech company.
-Generate realistic, targeted interview questions based on the JD and candidate resume.
-Output ONLY valid JSON — no markdown fences, no prose outside the JSON.`;
+// ─── Job Match Scoring ──────────────────────────────────────────────────────
 
-export interface InterviewResult {
-  technical:            string[];
-  behavioral:           string[];
-  systemDesign:         string[];
-  situational:          string[];
-  tipsForEachCategory:  Record<string, string>;
+export async function scoreJobMatch(
+  resumeText: string,
+  jobDescription: string
+): Promise<MatchResult> {
+  const blocks: MongoResumeBlock[] = [{ id: "body", type: "summary", content: resumeText } as MongoResumeBlock];
+  const ruleResult = analyzeJobMatch(blocks, jobDescription);
+
+  if (!isAIEnabled()) {
+    return {
+      verdict: ruleResult.verdict,
+      score: ruleResult.matchPercent,
+      strengths: ruleResult.strengths,
+      gaps: ruleResult.skillGaps,
+      recommendation: ruleResult.recommendations.join(" "),
+      source: "rules",
+    };
+  }
+
+  try {
+    const prompt = `Score resume vs job description. Return ONLY JSON:
+{"verdict":"Strong Match|Good Match|Partial Match|Weak Match","score":<0-100>,"strengths":["..."],"gaps":["..."],"recommendation":"..."}
+
+JD: """${jobDescription.slice(0, 3000)}"""
+RESUME: """${resumeText.slice(0, 4000)}"""`;
+    const ai = await generateJSON<Omit<MatchResult, "source">>(prompt);
+    return { ...ai, source: "ai" };
+  } catch {
+    return {
+      verdict: ruleResult.verdict,
+      score: ruleResult.matchPercent,
+      strengths: ruleResult.strengths,
+      gaps: ruleResult.skillGaps,
+      recommendation: ruleResult.recommendations.join(" "),
+      source: "rules",
+    };
+  }
 }
+
+// ─── Bullet Generator ─────────────────────────────────────────────────────────
+
+export async function generateBullets(
+  role: string,
+  context: string,
+  count = 3
+): Promise<BulletResult> {
+  const skills = context.split(/[,;\n]/).map(s => s.trim()).filter(Boolean).slice(0, 5);
+
+  if (!isAIEnabled()) {
+    return { bullets: suggestBullets(role, skills, count), source: "rules" };
+  }
+
+  try {
+    const prompt = `Generate ${count} resume bullet points for a ${role}.
+Use strong action verbs and include metrics. Context: ${context.slice(0, 1000)}
+Return ONLY JSON: {"bullets":["..."]}`;
+    const result = await generateJSON<{ bullets: string[] }>(prompt);
+    return { bullets: result.bullets, source: "ai" };
+  } catch {
+    return { bullets: suggestBullets(role, skills, count), source: "rules" };
+  }
+}
+
+// ─── Job Description Parser ─────────────────────────────────────────────────
+
+export async function parseJobDescription(rawText: string): Promise<ParsedJob> {
+  if (!isAIEnabled()) return heuristicParseJob(rawText) as ParsedJob;
+
+  try {
+    const prompt = `Parse job posting. Return ONLY JSON:
+{"title":"","company":"","location":"","salaryRange":"","requiredSkills":[],"niceToHaveSkills":[],"responsibilities":[],"qualifications":[],"workMode":"remote|hybrid|onsite|unknown","summary":"","keywords":[]}
+
+TEXT: """${rawText.slice(0, 8000)}"""`;
+    return await generateJSON<ParsedJob>(prompt);
+  } catch {
+    return heuristicParseJob(rawText) as ParsedJob;
+  }
+}
+
+// ─── Interview Questions ────────────────────────────────────────────────────
 
 export async function generateInterviewQuestions(
   jobDescription: string,
-  resumeText:     string,
-  numQuestions    = 5
+  resumeText: string,
+  numQuestions = 5
 ): Promise<InterviewResult> {
-  if (!isAIEnabled()) throw new AIDisabledError();
-  const n = Math.min(Math.max(numQuestions, 1), 15);
-  const prompt = `JOB DESCRIPTION:\n${jobDescription.slice(0, 3000)}\n\nRESUME:\n${resumeText.slice(0, 4000) || "(none provided)"}\n\nGenerate exactly ${n} questions per category. Return JSON:\n{"technical":["<q>"],"behavioral":["<STAR q>"],"systemDesign":["<design q>"],"situational":["<scenario q>"],"tipsForEachCategory":{"technical":"<tip>","behavioral":"<tip>","systemDesign":"<tip>","situational":"<tip>"}}`;
-  return callJSON<InterviewResult>(prompt, SYS_INTERVIEW, 2500);
+  if (!isAIEnabled()) {
+    return generateInterviewQuestionsRuleBased(jobDescription, resumeText, numQuestions);
+  }
+
+  try {
+    const n = Math.min(Math.max(numQuestions, 1), 15);
+    const prompt = `Generate interview questions. Return ONLY JSON:
+{"technical":["..."],"behavioral":["..."],"systemDesign":["..."],"situational":["..."],"tipsForEachCategory":{"technical":"...","behavioral":"...","systemDesign":"...","situational":"..."}}
+
+JD: """${jobDescription.slice(0, 3000)}"""
+RESUME: """${resumeText.slice(0, 4000)}"""
+Generate ${n} per category.`;
+    return await generateJSON<InterviewResult>(prompt);
+  } catch {
+    return generateInterviewQuestionsRuleBased(jobDescription, resumeText, numQuestions);
+  }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 3. Job Description Parser
-// ─────────────────────────────────────────────────────────────────────────────
-const SYS_PARSE = `You are a job-posting parser. Extract structured data from raw job descriptions.
-Output ONLY valid JSON — no markdown fences, no prose outside JSON.
-Use empty strings or arrays when information is absent — never null.`;
+function generateInterviewQuestionsRuleBased(
+  jobDescription: string,
+  resumeText: string,
+  n: number
+): InterviewResult {
+  const jdLower = jobDescription.toLowerCase();
+  const techStack = ["React", "TypeScript", "Node.js", "Python", "AWS", "SQL", "Docker"]
+    .filter(t => jdLower.includes(t.toLowerCase()));
 
-export interface ParsedJob {
-  title:             string;
-  company:           string;
-  location:          string;
-  salaryRange:       string;
-  requiredSkills:    string[];
-  niceToHaveSkills:  string[];
-  responsibilities:  string[];
-  qualifications:    string[];
-  workMode:          string;
-  summary:           string;
-  keywords:          string[];
+  return {
+    technical: [
+      `Explain your experience with ${techStack[0] ?? "the primary tech stack"} mentioned in the JD`,
+      "Walk me through a challenging technical problem you solved recently",
+      "How do you approach debugging production issues?",
+      "Describe your experience with system design at scale",
+      "What's your approach to writing maintainable, testable code?",
+    ].slice(0, n),
+    behavioral: [
+      "Tell me about a time you had to meet a tight deadline",
+      "Describe a situation where you disagreed with a team member",
+      "Give an example of when you took initiative beyond your role",
+      "Tell me about a failure and what you learned from it",
+      "Describe a time you mentored or helped a colleague grow",
+    ].slice(0, n),
+    systemDesign: [
+      "How would you design a URL shortener service?",
+      "Design a real-time notification system for millions of users",
+    ],
+    situational: [
+      "How would you handle a critical bug discovered right before launch?",
+      "Your team is behind schedule — what's your plan?",
+    ],
+    tipsForEachCategory: {
+      technical: "Use the STAR method and reference specific projects from your resume",
+      behavioral: "Prepare 5 STAR stories covering leadership, conflict, failure, initiative, and teamwork",
+      systemDesign: "Start with requirements, estimate scale, then draw components",
+      situational: "Show structured thinking — clarify, plan, execute, follow up",
+    },
+  };
 }
 
-export async function parseJobDescription(rawText: string): Promise<ParsedJob> {
-  if (!isAIEnabled()) return heuristicParseJob(rawText);
-  const prompt = `Parse this job posting:\n\n${rawText.slice(0, 8000)}\n\nReturn JSON:\n{"title":"","company":"","location":"","salaryRange":"","requiredSkills":[],"niceToHaveSkills":[],"responsibilities":[],"qualifications":[],"workMode":"remote|hybrid|onsite|unknown","summary":"<2-3 sentences>","keywords":[]}`;
-  return callJSON<ParsedJob>(prompt, SYS_PARSE, 1800);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 4. Offer Negotiation
-// ─────────────────────────────────────────────────────────────────────────────
-const SYS_NEGOTIATE = `You are a compensation negotiation coach with deep knowledge of tech salary benchmarks.
-Output ONLY valid JSON — no markdown fences, no prose outside the JSON.`;
-
-export interface NegotiationResult {
-  script:        string;
-  keyPoints:     string[];
-  counterOffer:  { base: string; bonus: string; equity: string };
-  marketInsight: string;
-  doList:        string[];
-  dontList:      string[];
-}
+// ─── Negotiation ──────────────────────────────────────────────────────────────
 
 export async function generateNegotiationScript(params: {
-  role:            string;
-  company:         string;
-  offeredBase:     string;
-  offeredBonus?:   string;
-  offeredEquity?:  string;
-  location:        string;
+  role: string;
+  company: string;
+  offeredBase: string;
+  offeredBonus?: string;
+  offeredEquity?: string;
+  location: string;
   yearsExperience: string;
-  targetBase?:     string;
+  targetBase?: string;
 }): Promise<NegotiationResult> {
-  if (!isAIEnabled()) throw new AIDisabledError();
-  const prompt = `Role: ${params.role}\nCompany: ${params.company}\nLocation: ${params.location}\nExperience: ${params.yearsExperience} yrs\nOffered base: ${params.offeredBase}${params.offeredBonus ? `\nOffered bonus: ${params.offeredBonus}` : ""}${params.offeredEquity ? `\nOffered equity: ${params.offeredEquity}` : ""}${params.targetBase ? `\nTarget base: ${params.targetBase}` : ""}\n\nReturn JSON:\n{"script":"<complete negotiation email>","keyPoints":["<point>"],"counterOffer":{"base":"","bonus":"","equity":""},"marketInsight":"<2-3 sentences>","doList":["<do>"],"dontList":["<dont>"]}`;
-  return callJSON<NegotiationResult>(prompt, SYS_NEGOTIATE, 2000);
+  if (!isAIEnabled()) {
+    return generateNegotiationRuleBased(params);
+  }
+
+  try {
+    const prompt = `Salary negotiation coach. Return ONLY JSON:
+{"script":"<email>","keyPoints":["..."],"counterOffer":{"base":"","bonus":"","equity":""},"marketInsight":"...","doList":["..."],"dontList":["..."]}
+
+Role: ${params.role} at ${params.company}, ${params.location}
+Experience: ${params.yearsExperience} yrs | Offered: ${params.offeredBase}${params.targetBase ? ` | Target: ${params.targetBase}` : ""}`;
+    return await generateJSON<NegotiationResult>(prompt);
+  } catch {
+    return generateNegotiationRuleBased(params);
+  }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 5. ATS Match Scoring
-// ─────────────────────────────────────────────────────────────────────────────
-const SYS_SCORE = `You are an ATS system and senior recruiter. Score how well a resume matches a job description.
-Output ONLY valid JSON — no markdown fences, no prose outside the JSON.`;
-
-export interface MatchResult {
-  verdict:        string;
-  score:          number;
-  strengths:      string[];
-  gaps:           string[];
-  recommendation: string;
+function generateNegotiationRuleBased(params: {
+  role: string;
+  company: string;
+  offeredBase: string;
+  location: string;
+  yearsExperience: string;
+  targetBase?: string;
+}): NegotiationResult {
+  return {
+    script: `Dear Hiring Manager,\n\nThank you for the offer for the ${params.role} position at ${params.company}. I'm excited about the opportunity. Based on my ${params.yearsExperience} years of experience and market research for ${params.location}, I'd like to discuss the base salary component of the offer.\n\nI believe a figure of ${params.targetBase ?? "[your target]"} would better reflect the value I bring. I'm confident I can make a significant impact on your team.\n\nI look forward to discussing this further.\n\nBest regards`,
+    keyPoints: [
+      "Express enthusiasm before negotiating",
+      "Anchor with market data for your location and experience level",
+      "Focus on total compensation, not just base salary",
+      "Be prepared to discuss equity and benefits",
+    ],
+    counterOffer: { base: params.targetBase ?? "10-15% above offer", bonus: "Request signing bonus", equity: "Negotiate refresh grants" },
+    marketInsight: `For ${params.role} roles in ${params.location} with ${params.yearsExperience} years experience, market rates typically range 10-20% above entry offers.`,
+    doList: ["Research market rates on Levels.fyi and Glassdoor", "Negotiate after receiving written offer", "Get everything in writing"],
+    dontList: ["Don't accept immediately", "Don't reveal your current salary", "Don't make it personal"],
+  };
 }
 
-export async function scoreJobMatch(
-  resumeText:     string,
-  jobDescription: string
-): Promise<MatchResult> {
-  if (!isAIEnabled()) return heuristicScore(resumeText, jobDescription);
-  const prompt = `JOB DESCRIPTION:\n${jobDescription.slice(0, 3000)}\n\nRESUME:\n${resumeText.slice(0, 4000)}\n\nReturn JSON:\n{"verdict":"Strong Match|Good Match|Partial Match|Weak Match","score":<0-100>,"strengths":["<strength>"],"gaps":["<gap>"],"recommendation":"<1-2 sentences>"}`;
-  return callJSON<MatchResult>(prompt, SYS_SCORE, 1000);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 6. Email Job Extractor
-// ─────────────────────────────────────────────────────────────────────────────
-const SYS_EMAIL = `You are a job-alert email parser. Extract job details from email text.
-Output ONLY valid JSON — no markdown fences, no prose outside the JSON.
-Use empty strings when information is absent.`;
-
-export interface ExtractedEmail {
-  isJobPosting: boolean;
-  title:        string;
-  company:      string;
-  location:     string;
-  applyUrl:     string;
-  deadline:     string;
-  salary:       string;
-  keySkills:    string[];
-  summary:      string;
-}
+// ─── Email Job Extractor ──────────────────────────────────────────────────────
 
 export async function extractJobFromEmail(emailText: string): Promise<ExtractedEmail> {
   if (!isAIEnabled()) {
-    return { isJobPosting: true, title: "", company: "", location: "", applyUrl: "", deadline: "", salary: "", keySkills: [], summary: emailText.slice(0, 300) };
+    const parsed = heuristicParseJob(emailText);
+    return {
+      isJobPosting: true,
+      title: parsed.title,
+      company: parsed.company,
+      location: parsed.location,
+      applyUrl: "",
+      deadline: "",
+      salary: parsed.salaryRange,
+      keySkills: parsed.requiredSkills,
+      summary: parsed.summary,
+    };
   }
-  const prompt = `Parse this email for job details:\n\n${emailText.slice(0, 6000)}\n\nReturn JSON:\n{"isJobPosting":true,"title":"","company":"","location":"","applyUrl":"","deadline":"","salary":"","keySkills":[],"summary":""}`;
-  return callJSON<ExtractedEmail>(prompt, SYS_EMAIL, 900);
-}
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Heuristic fallbacks (no API key needed)
-// ─────────────────────────────────────────────────────────────────────────────
-const TECH_KW = ["JavaScript","TypeScript","React","Next.js","Node.js","Python","Java","Go","Rust","AWS","Docker","Kubernetes","GraphQL","REST","SQL","MongoDB","Postgres","Redis","Tailwind","CSS","HTML","Git","CI/CD","Agile","Kafka"];
+  try {
+    const prompt = `Parse job alert email. Return ONLY JSON:
+{"isJobPosting":true,"title":"","company":"","location":"","applyUrl":"","deadline":"","salary":"","keySkills":[],"summary":""}
 
-function heuristicParseJob(text: string): ParsedJob {
-  const t        = text.replace(/\s+/g, " ").trim();
-  const title    = t.match(/(?:position|role|title)[:\-–]\s*([A-Z][\w\s/&]{2,60})/i)?.[1]?.trim() ?? "";
-  const company  = t.match(/(?:at|@|company)[:\-–\s]+([A-Z][\w&.\- ]{1,50})/i)?.[1]?.trim()       ?? "";
-  const location = t.match(/\b(remote|hybrid|on-?site|[A-Z][a-z]+,\s*[A-Z]{2})\b/i)?.[0]          ?? "";
-  const salary   = t.match(/\$\d{2,3}[kK](?:\s*[-–]\s*\$?\d{2,3}[kK])?|\d{1,3}(?:,\d{3})*\s*(?:LPA|lpa)/)?.[0] ?? "";
-  const keywords = TECH_KW.filter(k => new RegExp(`\\b${k.replace(/\./g,"\\.")}\\b`, "i").test(t));
-  return { title, company, location, salaryRange: salary, requiredSkills: keywords, niceToHaveSkills: [], responsibilities: [], qualifications: [], workMode: /remote/i.test(t) ? "remote" : /hybrid/i.test(t) ? "hybrid" : "unknown", summary: t.slice(0, 300), keywords };
-}
-
-function heuristicScore(resume: string, jd: string): MatchResult {
-  const r     = resume.toLowerCase();
-  const j     = jd.toLowerCase();
-  const jdKw  = TECH_KW.filter(k => j.includes(k.toLowerCase()));
-  const hits  = jdKw.filter(k => r.includes(k.toLowerCase()));
-  const score = Math.round((hits.length / Math.max(jdKw.length, 1)) * 100);
-  return {
-    verdict:        score >= 70 ? "Strong Match" : score >= 45 ? "Good Match" : score >= 25 ? "Partial Match" : "Weak Match",
-    score,
-    strengths:      hits.slice(0, 5).map(k => `${k} matches JD requirements`),
-    gaps:           [],
-    recommendation: "Add ANTHROPIC_API_KEY for detailed AI-powered analysis.",
-  };
+EMAIL: """${emailText.slice(0, 6000)}"""`;
+    return await generateJSON<ExtractedEmail>(prompt);
+  } catch {
+    const parsed = heuristicParseJob(emailText);
+    return {
+      isJobPosting: true,
+      title: parsed.title,
+      company: parsed.company,
+      location: parsed.location,
+      applyUrl: "",
+      deadline: "",
+      salary: parsed.salaryRange,
+      keySkills: parsed.requiredSkills,
+      summary: parsed.summary,
+    };
+  }
 }

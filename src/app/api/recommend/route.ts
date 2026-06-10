@@ -15,10 +15,11 @@ export async function POST(req: Request) {
     if (!uid) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { jobDescription } = await req.json();
-    if (!jobDescription?.trim())
+    if (!jobDescription?.trim()) {
       return NextResponse.json({ error: "jobDescription is required" }, { status: 400 });
+    }
 
-    const col     = await resumesCollection();
+    const col = await resumesCollection();
     const primary = await col.findOne({ userId: uid } as never, { sort: { updatedAt: -1 } } as never) as { blocks?: { type: string; content: string }[] } | null;
 
     const resumeText = primary?.blocks
@@ -26,9 +27,9 @@ export async function POST(req: Request) {
       .join("\n\n") ?? "";
 
     const result = await scoreJobMatch(resumeText, jobDescription);
-    return NextResponse.json({ ...result, aiEnabled: isAIEnabled() });
+    return NextResponse.json({ ...result, aiAvailable: isAIEnabled() });
   } catch (e) {
     console.error("[recommend.POST]", e);
-    return NextResponse.json({ error: (e as Error).message || "Scoring failed", aiEnabled: isAIEnabled() }, { status: 500 });
+    return NextResponse.json({ error: (e as Error).message || "Scoring failed", aiAvailable: isAIEnabled() }, { status: 500 });
   }
 }

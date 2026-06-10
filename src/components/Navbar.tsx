@@ -40,7 +40,7 @@ return (
       <div className="container mx-auto flex items-center justify-between px-6 py-4">
         {/* Logo */}
         <Link href="/" className="text-2xl font-bold text-white tracking-wide">
-          AI Resume Tracker
+          ResumeIQ
         </Link>
 
         {/* Desktop Menu */}

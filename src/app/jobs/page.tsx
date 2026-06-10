@@ -205,7 +205,7 @@ export default function JobsPage() {
         body: JSON.stringify({ jobDescription: job.description }),
       });
       const data = await res.json();
-      alert(`AI Recommendation: ${data.verdict} (Score: ${Math.round(data.score * 100)}%)`);
+      alert(`Match: ${data.verdict} (Score: ${data.score}%)${data.source === "rules" ? " — rule-based analysis" : ""}`);
     } catch (error) {
       console.error("Failed to get recommendation:", error);
     }

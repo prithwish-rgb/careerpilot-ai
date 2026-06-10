@@ -12,10 +12,10 @@ export function Hero() {
       <div className="relative z-10 grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
         <div>
           <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight">
-            Land more interviews with an AI-powered job tracker
+            Intelligent Resume &amp; Career Management Platform
           </h1>
           <p className="mt-4 text-gray-600 max-w-xl">
-            Parse jobs from emails, tailor your resume in seconds, prepare with smart questions, and negotiate your offer—all in one place.
+            ATS optimization, resume intelligence, job match analysis, application tracking, and optional AI tailoring — all at zero cost.
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
             <Button asChild>
@@ -32,7 +32,7 @@ export function Hero() {
             <div className="h-full w-full rounded-lg bg-gradient-to-br from-[#6C63FF]/20 to-[#00C9A7]/20 flex items-center justify-center text-center">
               <div>
                 <div className="text-sm text-gray-500">Animated Preview</div>
-                <div className="mt-2 text-lg font-semibold">Track • Tailor • Prepare • Win</div>
+                <div className="mt-2 text-lg font-semibold">Score • Match • Track • Win</div>
               </div>
             </div>
           </div>

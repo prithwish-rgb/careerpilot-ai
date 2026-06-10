@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
               marginBottom: 20,
             }}
           >
-            AI Resume Tracker
+            ResumeIQ
           </div>
           <div
             style={{
@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
               lineHeight: 1.4,
             }}
           >
-            Land more interviews with an AI-powered job tracker
+            Intelligent Resume &amp; Career Management Platform
           </div>
           <div
             style={{
@@ -66,11 +66,11 @@ export async function GET(request: NextRequest) {
               gap: 20,
             }}
           >
+            <span>Score</span>
+            <span>•</span>
+            <span>Match</span>
+            <span>•</span>
             <span>Track</span>
-            <span>•</span>
-            <span>Tailor</span>
-            <span>•</span>
-            <span>Prepare</span>
             <span>•</span>
             <span>Win</span>
           </div>

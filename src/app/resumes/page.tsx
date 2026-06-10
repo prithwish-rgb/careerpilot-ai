@@ -22,6 +22,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { ButtonLoading } from "@/components/ui/loading-spinner";
+import { ResumePreview } from "@/components/ResumePreview";
+import { IntelligencePanel } from "@/components/IntelligencePanel";
 
 interface ResumeBlock {
   id: string;
@@ -321,7 +323,7 @@ export default function ResumesPage() {
         <div className="flex justify-between items-center mb-8">
           <div>
             <h1 className="text-3xl font-bold text-gray-900 mb-2">Resume Builder</h1>
-            <p className="text-gray-600">Build and customize your professional resume</p>
+            <p className="text-gray-600">Build, analyze, and optimize your resume with ATS intelligence</p>
           </div>
           <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
             <DialogTrigger asChild>
@@ -356,9 +358,9 @@ export default function ResumesPage() {
           </Dialog>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Resume List */}
-          <div className="lg:col-span-1">
+          <div className="lg:col-span-2">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -418,7 +420,7 @@ export default function ResumesPage() {
           </div>
 
           {/* Resume Editor */}
-          <div className="lg:col-span-3">
+          <div className="lg:col-span-5">
             {selectedResume ? (
               <div className="space-y-6">
                 {/* Resume Header */}
@@ -566,6 +568,19 @@ export default function ResumesPage() {
                   </Button>
                 </CardContent>
               </Card>
+            )}
+          </div>
+
+          {/* Live Preview + Intelligence */}
+          <div className="lg:col-span-5 space-y-4">
+            {selectedResume && (
+              <>
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-700 mb-2">Live Preview</h3>
+                  <ResumePreview name={selectedResume.name} blocks={selectedResume.blocks} />
+                </div>
+                <IntelligencePanel resumeId={selectedResume._id} />
+              </>
             )}
           </div>
         </div>

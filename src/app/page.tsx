@@ -124,8 +124,8 @@ export default function Dashboard() {
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#6C63FF]/10 via-[#00C9A7]/10 to-[#6C63FF]/10">
         <Card className="w-full max-w-md">
           <CardContent className="p-8 text-center">
-            <h1 className="text-2xl font-bold mb-4">Welcome to AI Resume Tracker</h1>
-            <p className="text-gray-600 mb-6">Sign in to start tracking your job applications and building your career</p>
+            <h1 className="text-2xl font-bold mb-4">Welcome to ResumeIQ</h1>
+            <p className="text-gray-600 mb-6">Sign in to optimize your resume, track applications, and accelerate your career</p>
             <div className="space-y-4">
               <Button asChild className="w-full">
                 <Link href="/auth/signin">Get Started</Link>
@@ -170,7 +170,7 @@ export default function Dashboard() {
         </div>
 
         <div className="mb-8">
-          <Marquee items={["1-click job logging", "AI apply/pass", "Tailored resumes", "Interview prep", "Company insights", "Outreach templates", "Offer coach"]} />
+          <Marquee items={["ATS Resume Score", "Job Match Analysis", "Resume Health Check", "Application Tracking", "Skill Gap Detection", "Gmail Job Import", "Resume Tailoring"]} />
               </div>
 
         {/* Quick Stats */}
@@ -320,19 +320,19 @@ export default function Dashboard() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Brain className="h-5 w-5" />
-                  AI Insights
+                  Career Insights
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
                   <div className="p-3 bg-blue-50 rounded-lg">
                     <p className="text-sm text-blue-800">
-                      <strong>Tip:</strong> Tailor your resume for each application to increase your chances by 40%
+                      <strong>ATS Tip:</strong> Run Resume Intelligence on your resume to get an ATS score and improvement recommendations
                     </p>
                   </div>
                   <div className="p-3 bg-green-50 rounded-lg">
                     <p className="text-sm text-green-800">
-                      <strong>Success:</strong> You have a {Math.round((analytics?.metrics.applicationToInterviewRate || 0) * 100)}% application-to-interview rate
+                      <strong>Progress:</strong> {Math.round((analytics?.metrics.applicationToInterviewRate || 0) * 100)}% application-to-interview rate across {analytics?.totals.total ?? 0} tracked jobs
                     </p>
                   </div>
           </div>
