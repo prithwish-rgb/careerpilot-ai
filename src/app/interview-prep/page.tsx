@@ -1,30 +1,44 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useSession } from "next-auth/react";
-import { 
-  Brain, 
-  Play, 
-  Pause, 
+import {
+  Brain,
   RotateCcw,
-  Mic,
-  MicOff,
-  Volume2,
-  CheckCircle,
   Clock,
-  Target
+  Target,
+  ChevronLeft,
+  ChevronRight,
+  BarChart3,
+  Star,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { PageLoading, ButtonLoading } from "@/components/ui/loading-spinner";
 
-interface InterviewQuestions {
+type Category = "technical" | "behavioral" | "hr" | "mixed";
+type Difficulty = "easy" | "medium" | "hard";
+
+interface InterviewSet {
   technical: string[];
   behavioral: string[];
+  hr: string[];
   systemDesign: string[];
-  ttsPrompt: string;
+  meta?: {
+    role: string;
+    category: Category;
+    difficulty: Difficulty;
+    totalCount: number;
+  };
 }
 
 interface Job {
@@ -34,172 +48,185 @@ interface Job {
   description?: string;
 }
 
+interface QuestionItem {
+  text: string;
+  category: string;
+}
+
+interface AnswerRecord {
+  text: string;
+  rating: number;
+}
+
+function formatTime(seconds: number) {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+function flattenQuestions(data: InterviewSet, category: Category): QuestionItem[] {
+  const pick = (cat: keyof InterviewSet, label: string) =>
+    (Array.isArray(data[cat]) ? (data[cat] as string[]) : []).map((text) => ({
+      text,
+      category: label,
+    }));
+
+  if (category === "technical") return pick("technical", "Technical");
+  if (category === "behavioral") return pick("behavioral", "Behavioral");
+  if (category === "hr") return pick("hr", "HR");
+  return [
+    ...pick("technical", "Technical"),
+    ...pick("behavioral", "Behavioral"),
+    ...pick("hr", "HR"),
+    ...pick("systemDesign", "System Design"),
+  ];
+}
+
 export default function InterviewPrepPage() {
-  const { data: session, status } = useSession();
+  const { status } = useSession();
   const [jobs, setJobs] = useState<Job[]>([]);
-  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
-  const [questions, setQuestions] = useState<InterviewQuestions | null>(null);
+  const [selectedJobId, setSelectedJobId] = useState("");
+  const [category, setCategory] = useState<Category>("mixed");
+  const [difficulty, setDifficulty] = useState<Difficulty>("medium");
+  const [questions, setQuestions] = useState<QuestionItem[]>([]);
   const [loading, setLoading] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [currentIndex, setCurrentIndex] = useState(0);
   const [userAnswer, setUserAnswer] = useState("");
-  const [answers, setAnswers] = useState<{ [key: number]: string }>({});
+  const [answers, setAnswers] = useState<Record<number, AnswerRecord>>({});
+  const [rating, setRating] = useState(0);
+  const [timerSeconds, setTimerSeconds] = useState(0);
+  const [timerRunning, setTimerRunning] = useState(false);
+
+  const selectedJob = jobs.find((j) => j._id === selectedJobId) ?? null;
 
   useEffect(() => {
-    if (status === "authenticated") {
-      fetchJobs();
-    }
+    if (status === "authenticated") fetchJobs();
   }, [status]);
+
+  useEffect(() => {
+    if (!timerRunning) return;
+    const id = setInterval(() => setTimerSeconds((s) => s + 1), 1000);
+    return () => clearInterval(id);
+  }, [timerRunning]);
 
   const fetchJobs = async () => {
     try {
       const res = await fetch("/api/jobs");
       const data = await res.json();
       setJobs(data.data || []);
-    } catch (error) {
-      console.error("Failed to fetch jobs:", error);
+    } catch (e) {
+      console.error("Failed to fetch jobs:", e);
     }
   };
 
   const generateQuestions = async () => {
-    if (!selectedJob?.description) return;
+    const jobDescription = selectedJob?.description?.trim() || "";
+    const roleTitle = selectedJob?.title?.trim() || "";
+    if (!jobDescription && !roleTitle) {
+      setError("Select a job with a title or description, or add job details first.");
+      return;
+    }
 
     setLoading(true);
+    setError(null);
     try {
-      // Get user's resume blocks for context
-      const resumeRes = await fetch("/api/resumes");
-      const resumeData = await resumeRes.json();
-      const primaryResume = resumeData.data?.[0];
-      const resumeBlocks = primaryResume?.blocks || [];
-
       const res = await fetch("/api/interview/prepare", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          jobDescription: selectedJob.description,
-          resumeBlocks: resumeBlocks,
+          jobDescription,
+          roleTitle,
+          category,
+          difficulty,
+          countPerCategory: 5,
         }),
       });
 
       const data = await res.json();
       if (!res.ok) {
-        alert(data.error || "Failed to generate interview questions");
+        setError(data.error || "Failed to generate questions");
         return;
       }
-      setQuestions(data);
-      setCurrentQuestionIndex(0);
+
+      const flat = flattenQuestions(data, category);
+      if (!flat.length) {
+        setError("No questions returned. Try a different category or difficulty.");
+        return;
+      }
+
+      setQuestions(flat);
+      setCurrentIndex(0);
       setAnswers({});
-    } catch (error) {
-      console.error("Failed to generate questions:", error);
-      alert("An error occurred while generating questions");
+      setUserAnswer("");
+      setRating(0);
+      setTimerSeconds(0);
+      setTimerRunning(true);
+    } catch (e) {
+      console.error(e);
+      setError("An error occurred while generating questions.");
     } finally {
       setLoading(false);
     }
   };
 
-  const startInterview = () => {
-    setIsPlaying(true);
-    // In a real implementation, you would use Web Speech API for TTS
-    speakText("Welcome to your interview practice session. Let's begin with the first question.");
+  const navigateTo = (index: number) => {
+    setAnswers((prev) => {
+      const updated =
+        userAnswer.trim()
+          ? { ...prev, [currentIndex]: { text: userAnswer.trim(), rating: rating || 3 } }
+          : prev;
+      const saved = updated[index];
+      setUserAnswer(saved?.text || "");
+      setRating(saved?.rating || 0);
+      setCurrentIndex(index);
+      return updated;
+    });
   };
 
-  const stopInterview = () => {
-    setIsPlaying(false);
-    // Stop any ongoing speech
-    if (window.speechSynthesis) {
-      window.speechSynthesis.cancel();
-    }
-  };
+  const saveAnswer = useCallback(() => {
+    if (!userAnswer.trim()) return;
+    setAnswers((prev) => ({
+      ...prev,
+      [currentIndex]: { text: userAnswer.trim(), rating: rating || 3 },
+    }));
+  }, [userAnswer, rating, currentIndex]);
 
-  const speakText = (text: string) => {
-    if (window.speechSynthesis) {
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 0.8;
-      utterance.pitch = 1;
-      window.speechSynthesis.speak(utterance);
-    }
-  };
-
-  const nextQuestion = () => {
-    if (questions) {
-      const allQuestions = [...questions.technical, ...questions.behavioral, ...questions.systemDesign];
-      if (currentQuestionIndex < allQuestions.length - 1) {
-        setCurrentQuestionIndex(currentQuestionIndex + 1);
-        setUserAnswer(answers[currentQuestionIndex + 1] || "");
-      } else {
-        stopInterview();
-        alert("Interview completed! Great job practicing.");
-      }
-    }
-  };
-
-  const previousQuestion = () => {
-    if (currentQuestionIndex > 0) {
-      setCurrentQuestionIndex(currentQuestionIndex - 1);
-      setUserAnswer(answers[currentQuestionIndex - 1] || "");
-    }
-  };
-
-  const saveAnswer = () => {
-    setAnswers({ ...answers, [currentQuestionIndex]: userAnswer });
-  };
-
-  const startRecording = () => {
-    setIsRecording(true);
-    // In a real implementation, you would use Web Speech API for speech recognition
-    alert("Recording started! (This is a demo - real speech recognition would be implemented here)");
-  };
-
-  const stopRecording = () => {
-    setIsRecording(false);
-    // Stop recording and process the audio
-    alert("Recording stopped! (This is a demo - real speech processing would happen here)");
-  };
-
-  const resetInterview = () => {
-    setCurrentQuestionIndex(0);
+  const resetSession = () => {
+    setQuestions([]);
+    setCurrentIndex(0);
     setAnswers({});
     setUserAnswer("");
-    stopInterview();
+    setRating(0);
+    setTimerSeconds(0);
+    setTimerRunning(false);
+    setError(null);
   };
 
-  const getAllQuestions = () => {
-    if (!questions) return [];
-    return [...questions.technical, ...questions.behavioral, ...questions.systemDesign];
-  };
+  const stats = useMemo(() => {
+    const answered = Object.keys(answers).length;
+    const ratings = Object.values(answers).map((a) => a.rating).filter(Boolean);
+    const avgScore =
+      ratings.length > 0
+        ? Math.round((ratings.reduce((a, b) => a + b, 0) / ratings.length) * 20)
+        : 0;
+    return {
+      total: questions.length,
+      answered,
+      avgScore,
+    };
+  }, [answers, questions.length]);
 
-  const getCurrentQuestion = () => {
-    const allQuestions = getAllQuestions();
-    return allQuestions[currentQuestionIndex] || "";
-  };
-
-  const getQuestionType = () => {
-    if (!questions) return "";
-    const allQuestions = getAllQuestions();
-    const currentQ = allQuestions[currentQuestionIndex];
-    
-    if (questions.technical.includes(currentQ)) return "Technical";
-    if (questions.behavioral.includes(currentQ)) return "Behavioral";
-    if (questions.systemDesign.includes(currentQ)) return "System Design";
-    return "";
-  };
+  const currentQuestion = questions[currentIndex];
 
   if (status === "loading") {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#6C63FF] mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading interview prep...</p>
-        </div>
-      </div>
-    );
+    return <PageLoading text="Loading Smart Interview Prep..." />;
   }
 
   if (status === "unauthenticated") {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <p className="text-gray-600">Please sign in to access interview prep.</p>
+        <p className="text-gray-600">Please sign in to access Smart Interview Prep.</p>
       </div>
     );
   }
@@ -207,63 +234,86 @@ export default function InterviewPrepPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#6C63FF]/5 via-[#00C9A7]/5 to-[#6C63FF]/5">
       <div className="container mx-auto px-4 py-8">
-        {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Interview Preparation</h1>
-          <p className="text-gray-600">Practice with AI-generated questions tailored to your target role</p>
+          <p className="text-sm font-semibold uppercase tracking-wider text-[#6C63FF] mb-1">
+            CareerPilot
+          </p>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">Smart Interview Prep</h1>
+          <p className="text-gray-600 max-w-2xl">
+            Practice role-specific interview questions generated from curated industry question banks.
+          </p>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Job Selection & Setup */}
-          <div className="lg:col-span-1">
+          <div className="lg:col-span-1 space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
+                <CardTitle className="flex items-center gap-2 text-lg">
                   <Target className="h-5 w-5" />
-                  Select Target Job
+                  Session Setup
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
-                  <Label htmlFor="job-select">Choose a job to practice for</Label>
-                  <Select value={selectedJob?._id || ""} onValueChange={(value) => {
-                    const job = jobs.find(j => j._id === value);
-                    setSelectedJob(job || null);
-                  }}>
+                  <Label>Target job (optional context)</Label>
+                  <Select value={selectedJobId} onValueChange={setSelectedJobId}>
                     <SelectTrigger>
-                      <SelectValue placeholder="Select a job..." />
+                      <SelectValue placeholder="Select a saved job..." />
                     </SelectTrigger>
                     <SelectContent>
                       {jobs.map((job) => (
                         <SelectItem key={job._id} value={job._id}>
-                          {job.title} at {job.company}
+                          {job.title || "Untitled"} {job.company ? `@ ${job.company}` : ""}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
 
-                {selectedJob && (
-                  <div className="p-4 bg-gray-50 rounded-lg">
-                    <h3 className="font-semibold text-sm">{selectedJob.title}</h3>
-                    <p className="text-xs text-gray-600">{selectedJob.company}</p>
-                    {selectedJob.description && (
-                      <p className="text-xs text-gray-500 mt-2 line-clamp-3">
-                        {selectedJob.description.substring(0, 150)}...
-                      </p>
-                    )}
-                  </div>
+                <div>
+                  <Label>Category</Label>
+                  <Select value={category} onValueChange={(v) => setCategory(v as Category)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="mixed">Mixed</SelectItem>
+                      <SelectItem value="technical">Technical</SelectItem>
+                      <SelectItem value="behavioral">Behavioral</SelectItem>
+                      <SelectItem value="hr">HR</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label>Difficulty</Label>
+                  <Select value={difficulty} onValueChange={(v) => setDifficulty(v as Difficulty)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="easy">Easy</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="hard">Hard</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {error && (
+                  <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                    {error}
+                  </p>
                 )}
 
                 <Button
                   onClick={generateQuestions}
-                  disabled={!selectedJob || loading}
+                  disabled={loading}
                   className="w-full bg-gradient-to-r from-[#6C63FF] to-[#00C9A7] text-white"
                 >
                   {loading ? (
                     <>
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                      Generating Questions...
+                      <ButtonLoading />
+                      Generating...
                     </>
                   ) : (
                     <>
@@ -275,191 +325,136 @@ export default function InterviewPrepPage() {
               </CardContent>
             </Card>
 
-            {/* Interview Controls */}
-            {questions && (
-              <Card className="mt-6">
+            {questions.length > 0 && (
+              <Card>
                 <CardHeader>
-                  <CardTitle className="text-lg">Interview Controls</CardTitle>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <BarChart3 className="h-5 w-5" />
+                    Session Stats
+                  </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="flex gap-2">
-                    {!isPlaying ? (
-                      <Button onClick={startInterview} className="flex-1">
-                        <Play className="h-4 w-4 mr-2" />
-                        Start Interview
-                      </Button>
-                    ) : (
-                      <Button onClick={stopInterview} variant="outline" className="flex-1">
-                        <Pause className="h-4 w-4 mr-2" />
-                        Pause
-                      </Button>
-                    )}
-                    <Button onClick={resetInterview} variant="outline">
-                      <RotateCcw className="h-4 w-4" />
-                    </Button>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-500 flex items-center gap-1">
+                      <Clock className="h-4 w-4" /> Practice time
+                    </span>
+                    <span className="font-mono font-semibold">{formatTime(timerSeconds)}</span>
                   </div>
-
-                  <div className="flex gap-2">
-                    {!isRecording ? (
-                      <Button onClick={startRecording} variant="outline" className="flex-1">
-                        <Mic className="h-4 w-4 mr-2" />
-                        Start Recording
-                      </Button>
-                    ) : (
-                      <Button onClick={stopRecording} variant="outline" className="flex-1">
-                        <MicOff className="h-4 w-4 mr-2" />
-                        Stop Recording
-                      </Button>
-                    )}
-                    <Button onClick={() => speakText(getCurrentQuestion())} variant="outline">
-                      <Volume2 className="h-4 w-4" />
-                    </Button>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-500">Questions</span>
+                    <span className="font-semibold">
+                      {currentIndex + 1} / {stats.total}
+                    </span>
                   </div>
-
-                  <div className="text-center text-sm text-gray-600">
-                    Question {currentQuestionIndex + 1} of {getAllQuestions().length}
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-500">Answered</span>
+                    <span className="font-semibold">{stats.answered}</span>
                   </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-500">Session score</span>
+                    <span className="font-semibold text-[#6C63FF]">{stats.avgScore}%</span>
+                  </div>
+                  <Button onClick={resetSession} variant="outline" className="w-full">
+                    <RotateCcw className="h-4 w-4 mr-2" />
+                    Reset Session
+                  </Button>
                 </CardContent>
               </Card>
             )}
           </div>
 
-          {/* Interview Interface */}
           <div className="lg:col-span-2">
-            {!questions ? (
+            {questions.length === 0 ? (
               <Card>
-                <CardContent className="text-center py-12">
+                <CardContent className="text-center py-16">
                   <Brain className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">No questions generated yet</h3>
-                  <p className="text-gray-500 mb-4">Select a job and generate personalized interview questions</p>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">Ready to practice</h3>
+                  <p className="text-gray-500 max-w-md mx-auto">
+                    Choose a category and difficulty, optionally link a saved job for role context, then generate your question set.
+                  </p>
                 </CardContent>
               </Card>
             ) : (
               <div className="space-y-6">
-                {/* Current Question */}
                 <Card>
                   <CardHeader>
-                    <div className="flex justify-between items-center">
+                    <div className="flex flex-wrap justify-between items-center gap-2">
                       <CardTitle className="flex items-center gap-2">
                         <Brain className="h-5 w-5" />
-                        Current Question
+                        Question {currentIndex + 1}
                       </CardTitle>
-                      <div className="flex items-center gap-2">
-                        <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-medium">
-                          {getQuestionType()}
-                        </span>
-                        <span className="text-sm text-gray-500">
-                          {currentQuestionIndex + 1} / {getAllQuestions().length}
-                        </span>
-                      </div>
+                      <span className="px-2.5 py-1 bg-[#6C63FF]/10 text-[#6C63FF] rounded-full text-xs font-medium">
+                        {currentQuestion?.category}
+                      </span>
                     </div>
                   </CardHeader>
                   <CardContent>
-                    <div className="p-4 bg-gray-50 rounded-lg mb-4">
-                      <p className="text-gray-800 text-lg leading-relaxed">
-                        {getCurrentQuestion()}
-                      </p>
-                    </div>
-                    
+                    <p className="text-gray-800 text-lg leading-relaxed p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl mb-4">
+                      {currentQuestion?.text}
+                    </p>
                     <div className="flex gap-2">
-                      <Button onClick={previousQuestion} disabled={currentQuestionIndex === 0} variant="outline">
+                      <Button
+                        variant="outline"
+                        onClick={() => navigateTo(currentIndex - 1)}
+                        disabled={currentIndex === 0}
+                      >
+                        <ChevronLeft className="h-4 w-4 mr-1" />
                         Previous
                       </Button>
-                      <Button onClick={nextQuestion} className="flex-1">
-                        Next Question
+                      <Button
+                        className="flex-1"
+                        onClick={() => {
+                          if (currentIndex < questions.length - 1) {
+                            navigateTo(currentIndex + 1);
+                          } else {
+                            saveAnswer();
+                          }
+                        }}
+                      >
+                        {currentIndex >= questions.length - 1 ? "Finish" : "Next"}
+                        <ChevronRight className="h-4 w-4 ml-1" />
                       </Button>
                     </div>
                   </CardContent>
                 </Card>
 
-                {/* Answer Input */}
                 <Card>
                   <CardHeader>
                     <CardTitle>Your Answer</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div>
-                      <Textarea
-                        value={userAnswer}
-                        onChange={(e) => setUserAnswer(e.target.value)}
-                        placeholder="Type your answer here... (or use voice recording above)"
-                        rows={6}
-                        className="resize-none"
-                      />
-                    </div>
-                    <div className="flex justify-between">
-                      <Button onClick={saveAnswer} variant="outline">
+                    <Textarea
+                      value={userAnswer}
+                      onChange={(e) => setUserAnswer(e.target.value)}
+                      placeholder="Write your practice answer using STAR (Situation, Task, Action, Result) when applicable..."
+                      rows={6}
+                      className="resize-none"
+                    />
+                    <div className="flex flex-wrap items-center justify-between gap-4">
+                      <div className="flex items-center gap-1">
+                        <span className="text-sm text-gray-500 mr-2">Self-rating:</span>
+                        {[1, 2, 3, 4, 5].map((n) => (
+                          <button
+                            key={n}
+                            type="button"
+                            onClick={() => setRating(n)}
+                            className="p-1 rounded hover:bg-gray-100 transition-colors"
+                            aria-label={`Rate ${n} stars`}
+                          >
+                            <Star
+                              className={`h-5 w-5 ${
+                                n <= rating ? "fill-amber-400 text-amber-400" : "text-gray-300"
+                              }`}
+                            />
+                          </button>
+                        ))}
+                      </div>
+                      <Button variant="outline" onClick={saveAnswer}>
                         Save Answer
                       </Button>
-                      <div className="text-sm text-gray-500">
-                        {userAnswer.length} characters
-                      </div>
                     </div>
                   </CardContent>
                 </Card>
-
-                {/* Question Categories */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-sm text-blue-600">Technical Questions</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-2">
-                        {questions.technical.slice(0, 3).map((q, index) => (
-                          <div key={index} className="text-xs text-gray-600 p-2 bg-blue-50 rounded">
-                            {q.substring(0, 80)}...
-                          </div>
-                        ))}
-                        {questions.technical.length > 3 && (
-                          <div className="text-xs text-gray-500">
-                            +{questions.technical.length - 3} more
-                          </div>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-sm text-green-600">Behavioral Questions</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-2">
-                        {questions.behavioral.slice(0, 3).map((q, index) => (
-                          <div key={index} className="text-xs text-gray-600 p-2 bg-green-50 rounded">
-                            {q.substring(0, 80)}...
-                          </div>
-                        ))}
-                        {questions.behavioral.length > 3 && (
-                          <div className="text-xs text-gray-500">
-                            +{questions.behavioral.length - 3} more
-                          </div>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-sm text-purple-600">System Design</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-2">
-                        {questions.systemDesign.slice(0, 3).map((q, index) => (
-                          <div key={index} className="text-xs text-gray-600 p-2 bg-purple-50 rounded">
-                            {q.substring(0, 80)}...
-                          </div>
-                        ))}
-                        {questions.systemDesign.length > 3 && (
-                          <div className="text-xs text-gray-500">
-                            +{questions.systemDesign.length - 3} more
-                          </div>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
               </div>
             )}
           </div>

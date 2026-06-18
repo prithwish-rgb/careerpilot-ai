@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
               marginBottom: 20,
             }}
           >
-            ResumeIQ
+            CareerPilot
           </div>
           <div
             style={{
@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
               lineHeight: 1.4,
             }}
           >
-            Intelligent Resume &amp; Career Management Platform
+            Career Management Platform
           </div>
           <div
             style={{
@@ -66,13 +66,13 @@ export async function GET(request: NextRequest) {
               gap: 20,
             }}
           >
-            <span>Score</span>
+            <span>Resume</span>
             <span>•</span>
-            <span>Match</span>
+            <span>Jobs</span>
             <span>•</span>
-            <span>Track</span>
+            <span>Interview</span>
             <span>•</span>
-            <span>Win</span>
+            <span>Offer</span>
           </div>
         </div>
       </div>

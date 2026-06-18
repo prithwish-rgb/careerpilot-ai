@@ -5,7 +5,6 @@ import { useSession } from "next-auth/react";
 import { 
   Plus, 
   Search, 
-  Filter, 
   Edit, 
   Trash2, 
   ExternalLink,
@@ -13,8 +12,8 @@ import {
   CheckCircle,
   XCircle,
   TrendingUp,
-  Mail,
-  Link as LinkIcon
+  Link as LinkIcon,
+  Eye,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,7 +21,9 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { PageLoading, InlineLoading, ButtonLoading } from "@/components/ui/loading-spinner";
+import { PageLoading, ButtonLoading } from "@/components/ui/loading-spinner";
+import { Tooltip } from "@/components/ui/tooltip";
+import { MODAL_CONTENT_CLASS } from "@/lib/modal-styles";
 
 interface Job {
   _id: string;
@@ -54,6 +55,8 @@ export default function JobsPage() {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [editingJob, setEditingJob] = useState<Job | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [viewingJob, setViewingJob] = useState<Job | null>(null);
+  const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
@@ -183,6 +186,11 @@ export default function JobsPage() {
     }
   };
 
+  const openViewDialog = (job: Job) => {
+    setViewingJob(job);
+    setIsViewDialogOpen(true);
+  };
+
   const openEditDialog = (job: Job) => {
     setEditingJob(job);
     setFormData({
@@ -194,21 +202,6 @@ export default function JobsPage() {
       status: job.status,
     });
     setIsEditDialogOpen(true);
-  };
-
-  const getRecommendation = async (job: Job) => {
-    if (!job.description) return;
-    try {
-      const res = await fetch("/api/recommend", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jobDescription: job.description }),
-      });
-      const data = await res.json();
-      alert(`Match: ${data.verdict} (Score: ${data.score}%)${data.source === "rules" ? " — rule-based analysis" : ""}`);
-    } catch (error) {
-      console.error("Failed to get recommendation:", error);
-    }
   };
 
   const filteredJobs = useMemo(() => {
@@ -263,7 +256,7 @@ export default function JobsPage() {
                 Add Job
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-2xl w-[95vw] sm:w-full max-h-[90vh] overflow-y-auto">
+            <DialogContent className={MODAL_CONTENT_CLASS}>
               <DialogHeader>
                 <DialogTitle>Add New Job Application</DialogTitle>
               </DialogHeader>
@@ -377,7 +370,7 @@ export default function JobsPage() {
             onChange={(e) => setStatusFilter(e.target.value)}
             className="px-3 sm:px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#6C63FF] text-sm sm:text-base min-w-[140px]"
           >
-            <option value="all">All Status</option>
+            <option value="all">All</option>
             {statusOptions.map(option => (
               <option key={option.value} value={option.value}>{option.label}</option>
             ))}
@@ -485,38 +478,40 @@ export default function JobsPage() {
                           )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 lg:ml-4 flex-shrink-0">
+                      <div className="flex items-center gap-1 lg:ml-4 flex-shrink-0">
+                        <Tooltip label="View job details">
+                          <Button size="sm" variant="outline" onClick={() => openViewDialog(job)} aria-label="View">
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                        </Tooltip>
+                        <Tooltip label="Edit application">
+                          <Button size="sm" variant="outline" onClick={() => openEditDialog(job)} aria-label="Edit">
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                        </Tooltip>
                         {job.url && (
+                          <Tooltip label="Open original job posting">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => window.open(job.url, "_blank")}
+                              aria-label="Open posting"
+                            >
+                              <ExternalLink className="h-4 w-4" />
+                            </Button>
+                          </Tooltip>
+                        )}
+                        <Tooltip label="Delete application">
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => window.open(job.url, '_blank')}
+                            onClick={() => handleDeleteJob(job._id)}
+                            className="text-red-600 hover:text-red-700"
+                            aria-label="Delete"
                           >
-                            <ExternalLink className="h-4 w-4" />
+                            <Trash2 className="h-4 w-4" />
                           </Button>
-                        )}
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => getRecommendation(job)}
-                        >
-                          <TrendingUp className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => openEditDialog(job)}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleDeleteJob(job._id)}
-                          className="text-red-600 hover:text-red-700"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        </Tooltip>
                       </div>
                     </div>
                   </CardContent>
@@ -526,9 +521,42 @@ export default function JobsPage() {
           )}
         </div>
 
+        {/* View Dialog */}
+        <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
+          <DialogContent className={MODAL_CONTENT_CLASS}>
+            <DialogHeader>
+              <DialogTitle>{viewingJob?.title || "Job Details"}</DialogTitle>
+            </DialogHeader>
+            {viewingJob && (
+              <div className="space-y-4 text-sm">
+                <div>
+                  <p className="font-medium text-gray-500">Company</p>
+                  <p className="text-gray-900">{viewingJob.company || "—"}</p>
+                </div>
+                <div>
+                  <p className="font-medium text-gray-500">Status</p>
+                  <p className="text-gray-900 capitalize">{viewingJob.status}</p>
+                </div>
+                {viewingJob.description && (
+                  <div>
+                    <p className="font-medium text-gray-500">Description</p>
+                    <p className="text-gray-700 whitespace-pre-wrap">{viewingJob.description}</p>
+                  </div>
+                )}
+                {viewingJob.url && (
+                  <Button variant="outline" onClick={() => window.open(viewingJob.url, "_blank")}>
+                    <ExternalLink className="h-4 w-4 mr-2" />
+                    Open Original Posting
+                  </Button>
+                )}
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
         {/* Edit Dialog */}
         <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-          <DialogContent className="max-w-2xl w-[95vw] sm:w-full max-h-[90vh] overflow-y-auto">
+          <DialogContent className={MODAL_CONTENT_CLASS}>
             <DialogHeader>
               <DialogTitle>Edit Job Application</DialogTitle>
             </DialogHeader>

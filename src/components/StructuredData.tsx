@@ -4,9 +4,9 @@ export function StructuredData() {
   const structuredData = {
     "@context": "https://schema.org",
     "@type": "WebApplication",
-    "name": "ResumeIQ",
-    "alternateName": "Intelligent Resume & Career Management Platform",
-    "description": "ATS optimization, resume intelligence, job match analysis, application tracking, and optional AI tailoring — all at zero cost.",
+    "name": "CareerPilot",
+    "alternateName": "Career Management Platform",
+    "description": "ATS optimization, resume intelligence, job tracking, and Smart Interview Prep — your complete career management platform.",
     "url": "https://ai-resume-tracker-lake.vercel.app",
     "applicationCategory": "BusinessApplication",
     "operatingSystem": "Web",
@@ -20,13 +20,11 @@ export function StructuredData() {
       "name": "Prithwish Karmakar"
     },
     "featureList": [
-      "ATS Resume Score",
-      "Resume Health Check",
-      "Job Match Analysis",
-      "Skill Gap Detection",
-      "Application Tracking",
+      "Resume Score & ATS Compatibility",
+      "Job Application Tracking",
       "Resume Tailoring",
-      "Gmail Job Import",
+      "Smart Interview Prep",
+      "Keyword Match Analysis",
       "Career Progress Dashboard"
     ],
     "screenshot": "https://ai-resume-tracker-lake.vercel.app/api/og"

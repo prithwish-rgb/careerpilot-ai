@@ -6,7 +6,6 @@ import {
   Plus, 
   Edit, 
   Trash2, 
-  Save, 
   FileText,
   Briefcase,
   GraduationCap,
@@ -22,8 +21,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { ButtonLoading } from "@/components/ui/loading-spinner";
-import { ResumePreview } from "@/components/ResumePreview";
+import { LiveResumePreview } from "@/components/LiveResumePreview";
 import { IntelligencePanel } from "@/components/IntelligencePanel";
+import { MODAL_CONTENT_CLASS } from "@/lib/modal-styles";
 
 interface ResumeBlock {
   id: string;
@@ -67,6 +67,7 @@ export default function ResumesPage() {
   const [isTailorDialogOpen, setIsTailorDialogOpen] = useState(false);
   const [tailorJobDescription, setTailorJobDescription] = useState("");
   const [isTailoring, setIsTailoring] = useState(false);
+  const [tailorError, setTailorError] = useState<string | null>(null);
 
   useEffect(() => {
     if (status === "authenticated") {
@@ -112,6 +113,7 @@ export default function ResumesPage() {
     if (!selectedResume || !tailorJobDescription.trim()) return;
     
     setIsTailoring(true);
+    setTailorError(null);
     try {
       const res = await fetch("/api/tailor", {
         method: "POST",
@@ -136,11 +138,11 @@ export default function ResumesPage() {
         setIsTailorDialogOpen(false);
         setTailorJobDescription("");
       } else {
-        alert(data.error || "Failed to tailor resume");
+        setTailorError(data.error || "Failed to tailor resume. Check the job description and try again.");
       }
     } catch (error) {
       console.error("Failed to tailor resume:", error);
-      alert("An error occurred while tailoring");
+      setTailorError("Network error while tailoring. Please try again.");
     } finally {
       setIsTailoring(false);
     }
@@ -332,7 +334,7 @@ export default function ResumesPage() {
                 New Resume
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className={MODAL_CONTENT_CLASS}>
               <DialogHeader>
                 <DialogTitle>Create New Resume</DialogTitle>
               </DialogHeader>
@@ -577,7 +579,7 @@ export default function ResumesPage() {
               <>
                 <div>
                   <h3 className="text-sm font-semibold text-gray-700 mb-2">Live Preview</h3>
-                  <ResumePreview name={selectedResume.name} blocks={selectedResume.blocks} />
+                  <LiveResumePreview name={selectedResume.name} blocks={selectedResume.blocks} />
                 </div>
                 <IntelligencePanel resumeId={selectedResume._id} />
               </>
@@ -587,7 +589,7 @@ export default function ResumesPage() {
 
         {/* Edit Block Dialog */}
         <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-          <DialogContent>
+          <DialogContent className={MODAL_CONTENT_CLASS}>
             <DialogHeader>
               <DialogTitle>Edit Section</DialogTitle>
             </DialogHeader>
@@ -637,14 +639,19 @@ export default function ResumesPage() {
 
         {/* Tailor Dialog */}
         <Dialog open={isTailorDialogOpen} onOpenChange={setIsTailorDialogOpen}>
-          <DialogContent>
+          <DialogContent className={MODAL_CONTENT_CLASS}>
             <DialogHeader>
-              <DialogTitle>Tailor Resume with AI</DialogTitle>
+              <DialogTitle>Tailor Resume for Job</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
               <p className="text-sm text-gray-500">
-                Paste the Job Description below. AI will optimize your base resume to highlight relevant skills and keywords. A new tailored resume will be created.
+                Paste the job description below. CareerPilot will optimize your resume for relevant keywords and create a new tailored version.
               </p>
+              {tailorError && (
+                <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                  {tailorError}
+                </p>
+              )}
               <div>
                 <Label htmlFor="tailor-jd">Job Description</Label>
                 <Textarea

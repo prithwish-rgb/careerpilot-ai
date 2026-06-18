@@ -18,12 +18,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ResumeIQ - Intelligent Resume & Career Management",
-  description: "ATS optimization, resume intelligence, job match analysis, application tracking, and optional AI tailoring — all at zero cost.",
-  keywords: ["resume tracker", "ATS score", "resume intelligence", "job match analysis", "career management", "resume builder"],
+  title: "CareerPilot - Career Management Platform",
+  description: "ATS optimization, resume intelligence, job tracking, and Smart Interview Prep — your complete career management platform.",
+  keywords: ["career management", "resume tracker", "ATS score", "job tracking", "interview prep", "resume builder"],
   authors: [{ name: "Prithwish Karmakar" }],
   creator: "Prithwish Karmakar",
-  publisher: "ResumeIQ",
+  publisher: "CareerPilot",
   formatDetection: {
     email: false,
     address: false,
@@ -37,22 +37,22 @@ export const metadata: Metadata = {
     type: 'website',
     locale: 'en_US',
     url: 'https://ai-resume-tracker-lake.vercel.app',
-    siteName: 'ResumeIQ',
-    title: 'ResumeIQ - Intelligent Resume & Career Management',
-    description: 'ATS optimization, resume intelligence, job match analysis, application tracking, and optional AI tailoring.',
+    siteName: 'CareerPilot',
+    title: 'CareerPilot - Career Management Platform',
+    description: 'ATS optimization, resume intelligence, job tracking, and Smart Interview Prep.',
     images: [
       {
         url: '/api/og',
         width: 1200,
         height: 630,
-        alt: 'ResumeIQ - Intelligent Resume & Career Management Platform',
+        alt: 'CareerPilot - Career Management Platform',
       },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'ResumeIQ - Intelligent Resume & Career Management',
-    description: 'ATS optimization, resume intelligence, job match analysis, and application tracking.',
+    title: 'CareerPilot - Career Management Platform',
+    description: 'ATS optimization, resume intelligence, job tracking, and Smart Interview Prep.',
     images: ['/api/og'],
     creator: '@prithwish_rgb',
   },

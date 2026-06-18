@@ -1,6 +1,6 @@
-# ResumeIQ
+# CareerPilot
 
-**Intelligent Resume & Career Management Platform**
+**Career Management Platform**
 
 A full-stack web application for ATS optimization, resume intelligence, job match analysis, and application tracking — built to run at **$0 operational cost**.
 

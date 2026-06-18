@@ -31,7 +31,7 @@ const navigation = [
   { name: "Dashboard", href: "/", icon: BarChart3 },
   { name: "Jobs", href: "/jobs", icon: Briefcase },
   { name: "Resumes", href: "/resumes", icon: FileText },
-  { name: "Interview Prep", href: "/interview-prep", icon: Brain },
+  { name: "Smart Interview Prep", href: "/interview-prep", icon: Brain },
   { name: "Analytics", href: "/analytics", icon: BarChart3 },
 ];
 
@@ -39,8 +39,11 @@ return (
     <nav className="fixed top-0 w-full z-50 backdrop-blur-lg bg-gradient-to-r from-[#6C63FF]/90 via-[#00C9A7]/90 to-[#6C63FF]/90 shadow-lg border-b border-white/10">
       <div className="container mx-auto flex items-center justify-between px-6 py-4">
         {/* Logo */}
-        <Link href="/" className="text-2xl font-bold text-white tracking-wide">
-          ResumeIQ
+        <Link href="/" className="flex flex-col leading-tight">
+          <span className="text-2xl font-bold text-white tracking-wide">CareerPilot</span>
+          <span className="text-[10px] uppercase tracking-widest text-white/70 hidden sm:block">
+            Career Management Platform
+          </span>
         </Link>
 
         {/* Desktop Menu */}
