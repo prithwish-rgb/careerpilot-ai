@@ -34,10 +34,10 @@ export async function GET() {
     if (!uid) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const col  = await jobsCollection();
     const list = await col.find({ userId: uid } as never).sort({ updatedAt: -1 }).limit(500).toArray();
-    return NextResponse.json({ data: list });
+    return NextResponse.json({ success: true, data: list });
   } catch (e) {
     console.error("[jobs.GET]", e);
-    return NextResponse.json({ error: "Failed to load jobs", data: [] }, { status: 500 });
+    return NextResponse.json({ success: false, error: "Failed to load jobs" }, { status: 500 });
   }
 }
 

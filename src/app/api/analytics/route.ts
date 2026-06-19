@@ -23,6 +23,7 @@ export async function GET() {
     const appToInterviewRate = total ? (interview / Math.max(1, applied)) : 0;
 
     return NextResponse.json({
+      success: true,
       totals: { total, applied, interview, offer, rejected },
       metrics: {
         applicationToInterviewRate: appToInterviewRate,
@@ -31,8 +32,8 @@ export async function GET() {
   } catch (error) {
     console.error("Error fetching analytics:", error);
     return NextResponse.json({
-      totals: { total: 0, applied: 0, interview: 0, offer: 0, rejected: 0 },
-      metrics: { applicationToInterviewRate: 0 },
+      success: false,
+      error: "Failed to load analytics",
     }, { status: 500 });
   }
 }

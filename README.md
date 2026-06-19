@@ -1,46 +1,104 @@
-# CareerPilot
+# CareerPilot AI
 
-**Career Management Platform**
+**Smart Career Management Platform**
 
-A full-stack web application for ATS optimization, resume intelligence, job match analysis, and application tracking — built to run at **$0 operational cost**.
+A production-quality full-stack SaaS for resume intelligence, job tracking, Smart Interview Prep, and career analytics — built to run at **$0 operational cost** and showcase junior/full-stack engineering skills.
 
 Live: [https://ai-resume-tracker-lake.vercel.app](https://ai-resume-tracker-lake.vercel.app)
 
+## Overview
+
+CareerPilot AI helps job seekers manage their entire career pipeline in one place:
+
+- Build and analyze resumes with ATS intelligence
+- Track applications from saved → applied → interview → offer
+- Practice interviews with curated, rule-based question banks (no paid APIs)
+- View analytics, funnels, and career readiness scores
+
 ## Features
+
+| Module | Capabilities |
+|---|---|
+| **Dashboard** | Career journey animation, readiness score, parallel data loading, skeleton loaders |
+| **Resume Builder** | Block-based editor, live preview (`useDeferredValue`), intelligence panel, tailor for job |
+| **Jobs** | CRUD, URL/email parsing, status tracking, view/edit/delete with confirmation |
+| **Smart Interview Prep** | Category/difficulty selectors, timer, self-rating, localStorage persistence |
+| **Analytics** | Application funnel, status donut chart, weekly activity, insights |
 
 ### Rule-Based Intelligence (No API Key Required)
 
-| Feature | Description |
-|---|---|
-| **ATS Resume Score** | Grades your resume A–F based on keyword density, action verbs, quantified achievements, and structure |
-| **Resume Completeness** | Checks for required sections (summary, experience, skills) and recommends missing ones |
-| **Resume Health Check** | Identifies critical issues, warnings, and strengths |
-| **Job Match Analysis** | Compares resume keywords against a job description with match percentage |
-| **Skill Gap Detection** | Highlights missing skills from the job description |
-| **Resume Analytics** | Word count, section count, keyword density |
-| **Application Tracking** | Track jobs through saved → applied → interview → offer → rejected |
-| **Career Dashboard** | Progress metrics, recent applications, and insights |
-| **Gmail Job Import** | Import job postings from Gmail (requires Google OAuth setup) |
+- Resume Score, ATS Compatibility, Keyword Strength, Content Quality
+- Top Missing Keywords from job descriptions
+- Job match analysis with skill gap detection
+- Resume tailoring via rule-based keyword optimization
 
-### Optional AI Enhancement (Google Gemini Free Tier)
+### Optional AI (Google Gemini Free Tier)
 
-When `GEMINI_API_KEY` is set, these features get AI-powered upgrades. Without it, rule-based fallbacks keep everything working:
+When `GEMINI_API_KEY` is set, tailoring and parsing get AI upgrades. Without it, rule-based fallbacks keep everything working.
 
-- Resume Tailoring
-- Resume Bullet Generation
-- Resume Section Rewriting
-- Interview Question Generation
-- Job Description Parsing
-- Negotiation Scripts
+## Why Rule-Based Interview Prep?
+
+Interview prep uses **curated question banks** (`src/lib/interview-bank.ts`) instead of paid LLM APIs because:
+
+1. **Zero cost** — no per-request billing for portfolio/demo usage
+2. **Deterministic** — reproducible for demos and QA
+3. **Fast** — instant generation with no network latency
+4. **Reliable** — no rate limits, timeouts, or API key management for core flows
+5. **Interview-realistic** — questions sourced from common industry patterns (STAR, technical, HR)
+
+Randomization and role context from saved jobs keep sessions fresh without external dependencies.
+
+## Architecture
+
+```
+src/
+├── app/
+│   ├── page.tsx              # Dashboard (Promise.all: jobs, analytics, resumes)
+│   ├── jobs/                 # Application tracker
+│   ├── resumes/              # Resume builder + intelligence
+│   ├── interview-prep/       # Smart Interview Prep
+│   ├── analytics/            # Funnel, charts, insights
+│   └── api/
+│       ├── jobs/             # CRUD + parsing
+│       ├── resumes/          # CRUD
+│       ├── analytics/        # Aggregated metrics
+│       ├── intelligence/     # Score + match (rule-based)
+│       ├── tailor/           # Resume tailoring (AI + fallback)
+│       └── interview/prepare # Question generation (bank)
+├── components/
+│   ├── CareerReadinessScore  # Weighted readiness widget
+│   ├── IntelligencePanel     # ATS + keywords UI
+│   ├── LiveResumePreview     # Deferred preview updates
+│   ├── EmptyState            # Shared empty states
+│   ├── ConfirmDialog         # Delete confirmations
+│   └── charts/               # Donut, funnel (SVG, zero deps)
+└── lib/
+    ├── intelligence.ts       # Rule-based ATS engine
+    ├── interview-bank.ts     # Curated interview questions
+    ├── interview-persistence.ts  # localStorage stats
+    ├── readiness.ts          # Career readiness calculation
+    ├── modal-styles.ts       # Design tokens (single source of truth)
+    └── ai.ts                 # Optional Gemini + fallbacks
+```
 
 ## Tech Stack
 
 - **Framework:** Next.js 15 (App Router) + React 19 + TypeScript
-- **Database:** MongoDB Atlas (free tier)
+- **Database:** MongoDB Atlas
 - **Auth:** NextAuth.js (credentials + optional OAuth)
-- **Styling:** Tailwind CSS 4 + Radix UI
-- **AI (optional):** Google Gemini 2.5 Flash (free tier)
-- **Deployment:** Vercel (free tier)
+- **UI:** Tailwind CSS 4, shadcn/ui, Radix UI, Framer Motion
+- **AI (optional):** Google Gemini 2.5 Flash
+- **Deployment:** Vercel
+
+## Performance Optimizations
+
+- `Promise.all` for parallel dashboard/analytics fetching (3 requests max on dashboard)
+- Dynamic imports for Hero, Marquee, AnimatedHeadline
+- `React.memo` + `useMemo` for stats grids
+- `useDeferredValue` for live resume preview
+- Skeleton loaders during initial fetch
+- SVG charts (no chart library bundle)
+- Lazy session stats from localStorage (no DB round-trip)
 
 ## Getting Started
 
@@ -52,64 +110,70 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
-
 ## Environment Variables
 
 ```env
-# Required
 MONGODB_URI="mongodb+srv://..."
 NEXTAUTH_SECRET="openssl rand -base64 32"
 NEXTAUTH_URL="http://localhost:3000"
 
-# Optional — OAuth providers
-GOOGLE_CLIENT_ID=""
-GOOGLE_CLIENT_SECRET=""
-GITHUB_CLIENT_ID=""
-GITHUB_CLIENT_SECRET=""
-
-# Optional — Gmail import
-GOOGLE_REFRESH_TOKEN=""
-
-# Optional — AI enhancement (free tier at https://aistudio.google.com/app/apikey)
+# Optional
 GEMINI_API_KEY=""
 GEMINI_MODEL="gemini-2.5-flash"
+GOOGLE_CLIENT_ID=""
+GOOGLE_CLIENT_SECRET=""
 ```
 
-The app is **fully functional without `GEMINI_API_KEY`**. All intelligence features use deterministic rule-based algorithms.
+## Testing Checklist
 
-## Architecture
+### Jobs
+- [ ] Create job (manual, URL, email text)
+- [ ] Edit job status and details
+- [ ] View job details dialog
+- [ ] Delete with confirmation
+- [ ] Open original posting link
+- [ ] Empty state shows guidance (not error)
 
-```
-src/
-├── app/                    # Next.js App Router pages & API routes
-│   ├── api/
-│   │   ├── intelligence/   # ATS score, job match (rule-based)
-│   │   ├── tailor/         # Resume tailoring (AI + fallback)
-│   │   ├── bullets/        # Bullet generation (AI + fallback)
-│   │   ├── jobs/           # Job CRUD + parsing
-│   │   └── resumes/        # Resume CRUD
-│   ├── resumes/            # Resume builder with live preview
-│   ├── jobs/               # Application tracker
-│   └── analytics/          # Career progress dashboard
-├── components/
-│   ├── IntelligencePanel   # ATS score, health, match UI
-│   ├── ResumePreview       # Live resume preview
-│   └── Hero, Navbar, etc.
-└── lib/
-    ├── intelligence.ts     # Rule-based ATS/match/health engine
-    ├── ai.ts               # Optional Gemini integration + fallbacks
-    ├── mongodb.ts          # Database helpers
-    └── auth-config.ts      # NextAuth configuration
-```
+### Resumes
+- [ ] Create resume and add sections
+- [ ] Live preview updates smoothly
+- [ ] Analyze resume intelligence
+- [ ] Match against job description / saved job
+- [ ] Tailor with valid/invalid/short JD
 
-## Portfolio Highlights
+### Smart Interview Prep
+- [ ] Generate by category + difficulty
+- [ ] Timer runs during session
+- [ ] Self-rating saves per question
+- [ ] Stats persist after refresh (localStorage)
+- [ ] Streak and totals update
 
-- **Zero-cost production deployment** on Vercel + MongoDB Atlas free tiers
-- **Graceful degradation** — every feature works without paid APIs
-- **Deterministic intelligence engine** with 50+ tech keywords, action verb detection, and quantified achievement scoring
-- **Full authentication** with credentials and optional OAuth
-- **Responsive UI** with live resume preview and real-time ATS analysis
+### Dashboard
+- [ ] First load skeleton → content
+- [ ] Empty state for new users
+- [ ] Career readiness unlocks with activity
+- [ ] Returning user sees readiness score
+
+### Analytics
+- [ ] Empty state with CTA
+- [ ] Funnel + donut with data
+- [ ] Weekly activity chart
+
+## Screenshots / GIF Recommendations
+
+1. Dashboard with Career Journey animation + readiness score
+2. Resume Intelligence panel with score rings
+3. Smart Interview Prep question workspace
+4. Analytics funnel + status donut
+5. Mobile responsive jobs list
+
+## Future Improvements
+
+- Unified `/api/dashboard` endpoint (single round-trip)
+- E2E tests with Playwright
+- Dark mode polish pass
+- Export analytics as PDF
+- Collaborative resume sharing
 
 ## License
 

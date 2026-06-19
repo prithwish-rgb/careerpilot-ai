@@ -1,23 +1,24 @@
 "use client";
-import { Brain } from "lucide-react";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useSession } from "next-auth/react";
-import { 
-  BarChart3, 
-  TrendingUp, 
-  TrendingDown,
+import {
+  BarChart3,
+  TrendingUp,
   Clock,
-  CheckCircle,
-  XCircle,
-  Target,
-  Calendar,
   Award,
-  Users,
-  Briefcase
+  Briefcase,
+  Brain,
+  Calendar,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { PageLoading } from "@/components/ui/loading-spinner";
+import { EmptyState } from "@/components/EmptyState";
+import { DonutChart } from "@/components/charts/DonutChart";
+import { FunnelChart } from "@/components/charts/FunnelChart";
+import { PAGE_CONTAINER_CLASS, SECTION_HEADER_CLASS, SECTION_SUBTITLE_CLASS } from "@/lib/modal-styles";
+import Link from "next/link";
 
 interface Analytics {
   totals: {
@@ -47,28 +48,33 @@ export default function AnalyticsPage() {
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
-  const [timeRange, setTimeRange] = useState("30"); // days
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [timeRange, setTimeRange] = useState("30");
 
   useEffect(() => {
-    if (status === "authenticated") {
-      fetchData();
-    }
+    if (status === "authenticated") fetchData();
   }, [status, timeRange]);
 
   const fetchData = async () => {
+    setFetchError(null);
     try {
       const [analyticsRes, jobsRes] = await Promise.all([
         fetch("/api/analytics"),
-        fetch("/api/jobs")
+        fetch("/api/jobs"),
       ]);
-      
-      const analyticsData = await analyticsRes.json();
+
+      if (!analyticsRes.ok || !jobsRes.ok) {
+        setFetchError("Unable to load analytics data.");
+        setAnalytics(null);
+        setJobs([]);
+        return;
+      }
+
+      setAnalytics(await analyticsRes.json());
       const jobsData = await jobsRes.json();
-      
-      setAnalytics(analyticsData);
-      setJobs(jobsData.data || []);
-    } catch (error) {
-      console.error("Failed to fetch analytics:", error);
+      setJobs(jobsData.data ?? []);
+    } catch {
+      setFetchError("Unable to load analytics data.");
     } finally {
       setLoading(false);
     }
@@ -78,60 +84,38 @@ export default function AnalyticsPage() {
     const days = parseInt(timeRange);
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - days);
-    
-    return jobs.filter(job => new Date(job.createdAt) >= cutoffDate);
+    return jobs.filter((job) => new Date(job.createdAt) >= cutoffDate);
   };
 
-  const getStatusDistribution = () => {
+  const statusDistribution = useMemo(() => {
     const recentJobs = getJobsInTimeRange();
-    const distribution = recentJobs.reduce((acc, job) => {
-      acc[job.status] = (acc[job.status] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
-    
-    return distribution;
-  };
+    const distribution = recentJobs.reduce(
+      (acc, job) => {
+        acc[job.status] = (acc[job.status] || 0) + 1;
+        return acc;
+      },
+      {} as Record<string, number>
+    );
+    return Object.entries(distribution).map(([label, value]) => ({ label, value }));
+  }, [jobs, timeRange]);
 
-  const getTopKeywords = () => {
-    const allKeywords = jobs.flatMap(job => job.keywords || []);
-    const keywordCount = allKeywords.reduce((acc, keyword) => {
-      acc[keyword] = (acc[keyword] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
-    
-    return Object.entries(keywordCount)
-      .sort(([,a], [,b]) => b - a)
-      .slice(0, 10);
-  };
-
-  const getWeeklyActivity = () => {
+  const weeklyActivity = useMemo(() => {
     const recentJobs = getJobsInTimeRange();
     const weeks: Record<string, number> = {};
-    
-    recentJobs.forEach(job => {
+    recentJobs.forEach((job) => {
       const date = new Date(job.createdAt);
       const weekStart = new Date(date);
       weekStart.setDate(date.getDate() - date.getDay());
-      const weekKey = weekStart.toISOString().split('T')[0];
+      const weekKey = weekStart.toISOString().split("T")[0];
       weeks[weekKey] = (weeks[weekKey] || 0) + 1;
     });
-    
     return Object.entries(weeks)
       .sort(([a], [b]) => a.localeCompare(b))
-      .slice(-8); // Last 8 weeks
-  };
+      .slice(-8);
+  }, [jobs, timeRange]);
 
-  const getCompanyStats = () => {
-    const companyCount = jobs.reduce((acc, job) => {
-      const company = job.company || "Unknown";
-      acc[company] = (acc[company] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
-    
-    return Object.entries(companyCount)
-      .sort(([,a], [,b]) => b - a)
-      .slice(0, 10);
-  };
+  const getInterviewRate = () =>
+    (analytics?.metrics.applicationToInterviewRate ?? 0) * 100;
 
   const getSuccessRate = () => {
     if (!analytics) return 0;
@@ -140,20 +124,10 @@ export default function AnalyticsPage() {
     return (analytics.totals.offer / total) * 100;
   };
 
-  const getInterviewRate = () => {
-    if (!analytics) return 0;
-    return analytics.metrics.applicationToInterviewRate * 100;
-  };
+  const hasData = (analytics?.totals.total ?? 0) > 0;
 
   if (status === "loading" || loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#6C63FF] mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading analytics...</p>
-        </div>
-      </div>
-    );
+    return <PageLoading text="Loading analytics..." />;
   }
 
   if (status === "unauthenticated") {
@@ -164,285 +138,169 @@ export default function AnalyticsPage() {
     );
   }
 
-  const statusDistribution = getStatusDistribution();
-  const topKeywords = getTopKeywords();
-  const weeklyActivity = getWeeklyActivity();
-  const companyStats = getCompanyStats();
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#6C63FF]/5 via-[#00C9A7]/5 to-[#6C63FF]/5">
-      <div className="container mx-auto px-4 py-8">
-        {/* Header */}
-        <div className="flex justify-between items-center mb-8">
+    <div className={PAGE_CONTAINER_CLASS}>
+      <div className="max-w-7xl mx-auto px-4 py-8">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">Analytics Dashboard</h1>
-            <p className="text-gray-600">Track your job search progress and insights</p>
+            <p className="text-sm font-semibold uppercase tracking-wider text-[#6C63FF] mb-1">
+              CareerPilot AI
+            </p>
+            <h1 className={SECTION_HEADER_CLASS}>Analytics Dashboard</h1>
+            <p className={SECTION_SUBTITLE_CLASS}>Track your job search progress and insights</p>
           </div>
           <div className="flex gap-2">
             <select
               value={timeRange}
               onChange={(e) => setTimeRange(e.target.value)}
-              className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#6C63FF]"
+              className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#6C63FF] text-sm bg-white"
             >
               <option value="7">Last 7 days</option>
               <option value="30">Last 30 days</option>
               <option value="90">Last 90 days</option>
               <option value="365">Last year</option>
             </select>
-            <Button onClick={fetchData} variant="outline">
-              Refresh
-            </Button>
+            <Button onClick={fetchData} variant="outline">Refresh</Button>
           </div>
         </div>
 
-        {/* Key Metrics */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Total Applications</p>
-                  <p className="text-2xl font-bold text-gray-900">{analytics?.totals.total || 0}</p>
-                </div>
-                <Briefcase className="h-8 w-8 text-[#6C63FF]" />
-              </div>
-            </CardContent>
-          </Card>
+        {fetchError && (
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-800">
+            {fetchError}
+          </div>
+        )}
 
+        {!hasData && !fetchError ? (
           <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Interview Rate</p>
-                  <p className="text-2xl font-bold text-blue-600">
-                    {Math.round(getInterviewRate())}%
-                  </p>
-                </div>
-                <TrendingUp className="h-8 w-8 text-blue-500" />
-              </div>
-            </CardContent>
+            <EmptyState
+              icon={BarChart3}
+              title="No application data yet"
+              description="Start tracking job applications to unlock analytics, funnels, and activity charts."
+              action={
+                <Button asChild>
+                  <Link href="/jobs">Add Your First Job</Link>
+                </Button>
+              }
+            />
           </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Success Rate</p>
-                  <p className="text-2xl font-bold text-green-600">
-                    {Math.round(getSuccessRate())}%
-                  </p>
-                </div>
-                <Award className="h-8 w-8 text-green-500" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Active Applications</p>
-                  <p className="text-2xl font-bold text-yellow-600">
-                    {(analytics?.totals.applied || 0) - (analytics?.totals.rejected || 0)}
-                  </p>
-                </div>
-                <Clock className="h-8 w-8 text-yellow-500" />
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Status Distribution */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <BarChart3 className="h-5 w-5" />
-                Application Status Distribution
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {Object.entries(statusDistribution).map(([status, count]) => {
-                  const total = Object.values(statusDistribution).reduce((a, b) => a + b, 0);
-                  const percentage = total > 0 ? (count / total) * 100 : 0;
-                  
-                  return (
-                    <div key={status} className="space-y-2">
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm font-medium capitalize">{status}</span>
-                        <span className="text-sm text-gray-600">{count} ({Math.round(percentage)}%)</span>
+        ) : analytics && (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+              {[
+                { label: "Total Applications", value: analytics.totals.total, icon: Briefcase, color: "text-[#6C63FF]" },
+                { label: "Interview Rate", value: `${Math.round(getInterviewRate())}%`, icon: TrendingUp, color: "text-blue-600" },
+                { label: "Success Rate", value: `${Math.round(getSuccessRate())}%`, icon: Award, color: "text-green-600" },
+                { label: "Active Pipeline", value: analytics.totals.applied + analytics.totals.interview, icon: Clock, color: "text-yellow-600" },
+              ].map(({ label, value, icon: Icon, color }) => (
+                <Card key={label}>
+                  <CardContent className="p-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-gray-600">{label}</p>
+                        <p className={`text-2xl font-bold ${color}`}>{value}</p>
                       </div>
-                      <div className="w-full bg-gray-200 rounded-full h-2">
-                        <div
-                          className="bg-[#6C63FF] h-2 rounded-full transition-all duration-300"
-                          style={{ width: `${percentage}%` }}
-                        ></div>
-                      </div>
+                      <Icon className={`h-8 w-8 ${color}`} />
                     </div>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Top Keywords */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Target className="h-5 w-5" />
-                Most Common Skills
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {topKeywords.length === 0 ? (
-                  <p className="text-gray-500 text-sm">No keywords found</p>
-                ) : (
-                  topKeywords.map(([keyword, count], index) => (
-                    <div key={keyword} className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <span className="text-sm font-medium text-gray-500">#{index + 1}</span>
-                        <span className="text-sm font-medium">{keyword}</span>
-                      </div>
-                      <span className="text-sm text-gray-600">{count}</span>
-                    </div>
-                  ))
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Weekly Activity */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Calendar className="h-5 w-5" />
-                Weekly Activity
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                {weeklyActivity.length === 0 ? (
-                  <p className="text-gray-500 text-sm">No activity in selected period</p>
-                ) : (
-                  weeklyActivity.map(([week, count]) => (
-                    <div key={week} className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">
-                        {new Date(week).toLocaleDateString()}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <div className="w-20 bg-gray-200 rounded-full h-2">
-                          <div
-                            className="bg-[#00C9A7] h-2 rounded-full"
-                            style={{ width: `${(count / Math.max(...weeklyActivity.map(([,c]) => c))) * 100}%` }}
-                          ></div>
-                        </div>
-                        <span className="text-sm font-medium w-6 text-right">{count}</span>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Company Stats */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Users className="h-5 w-5" />
-                Top Companies
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {companyStats.length === 0 ? (
-                  <p className="text-gray-500 text-sm">No company data</p>
-                ) : (
-                  companyStats.map(([company, count], index) => (
-                    <div key={company} className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <span className="text-sm font-medium text-gray-500">#{index + 1}</span>
-                        <span className="text-sm font-medium">{company}</span>
-                      </div>
-                      <span className="text-sm text-gray-600">{count}</span>
-                    </div>
-                  ))
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Insights & Recommendations */}
-        <Card className="mt-8">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Brain className="h-5 w-5" />
-              AI Insights & Recommendations
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-4">
-                <h3 className="font-semibold text-gray-900">Performance Insights</h3>
-                <div className="space-y-3">
-                  {getInterviewRate() > 20 ? (
-                    <div className="p-3 bg-green-50 rounded-lg">
-                      <p className="text-sm text-green-800">
-                        <strong>Great job!</strong> Your {Math.round(getInterviewRate())}% interview rate is above average.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="p-3 bg-yellow-50 rounded-lg">
-                      <p className="text-sm text-yellow-800">
-                        <strong>Room for improvement:</strong> Consider tailoring your applications more carefully.
-                      </p>
-                    </div>
-                  )}
-                  
-                  {getSuccessRate() > 10 ? (
-                    <div className="p-3 bg-green-50 rounded-lg">
-                      <p className="text-sm text-green-800">
-                        <strong>Excellent!</strong> Your {Math.round(getSuccessRate())}% success rate shows strong interview skills.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="p-3 bg-blue-50 rounded-lg">
-                      <p className="text-sm text-blue-800">
-                        <strong>Tip:</strong> Practice more interview questions to improve your success rate.
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <h3 className="font-semibold text-gray-900">Action Items</h3>
-                <div className="space-y-3">
-                  <div className="p-3 bg-blue-50 rounded-lg">
-                    <p className="text-sm text-blue-800">
-                      <strong>Focus on:</strong> {topKeywords.slice(0, 3).map(([k]) => k).join(", ")} skills
-                    </p>
-                  </div>
-                  
-                  <div className="p-3 bg-purple-50 rounded-lg">
-                    <p className="text-sm text-purple-800">
-                      <strong>Apply to more:</strong> {companyStats.slice(0, 2).map(([c]) => c).join(", ")} and similar companies
-                    </p>
-                  </div>
-                  
-                  <div className="p-3 bg-orange-50 rounded-lg">
-                    <p className="text-sm text-orange-800">
-                      <strong>Timing:</strong> You&apos;re most active on {weeklyActivity.length > 0 ? new Date(weeklyActivity[weeklyActivity.length - 1][0]).toLocaleDateString('en-US', { weekday: 'long' }) : 'weekdays'}
-                    </p>
-                  </div>
-                </div>
-              </div>
+                  </CardContent>
+                </Card>
+              ))}
             </div>
-          </CardContent>
-        </Card>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <TrendingUp className="h-5 w-5" />
+                    Application Funnel
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <FunnelChart
+                    applied={analytics.totals.applied}
+                    interview={analytics.totals.interview}
+                    offer={analytics.totals.offer}
+                  />
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <BarChart3 className="h-5 w-5" />
+                    Status Distribution
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {statusDistribution.length === 0 ? (
+                    <p className="text-sm text-gray-500">No applications in the selected period.</p>
+                  ) : (
+                    <DonutChart data={statusDistribution} />
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Calendar className="h-5 w-5" />
+                    Activity Over Time
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {weeklyActivity.length === 0 ? (
+                    <p className="text-sm text-gray-500">No activity in the selected period. Add jobs to see weekly trends.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {weeklyActivity.map(([week, count]) => (
+                        <div key={week} className="flex justify-between items-center">
+                          <span className="text-sm text-gray-600">{new Date(week).toLocaleDateString()}</span>
+                          <div className="flex items-center gap-2">
+                            <div className="w-24 bg-gray-200 rounded-full h-2">
+                              <div
+                                className="bg-[#00C9A7] h-2 rounded-full"
+                                style={{
+                                  width: `${(count / Math.max(...weeklyActivity.map(([, c]) => c), 1)) * 100}%`,
+                                }}
+                              />
+                            </div>
+                            <span className="text-sm font-medium w-6 text-right">{count}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Brain className="h-5 w-5" />
+                    Insights
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {getInterviewRate() > 20 ? (
+                    <div className="p-3 bg-green-50 rounded-lg text-sm text-green-800">
+                      Your {Math.round(getInterviewRate())}% interview rate is above average. Keep tailoring applications.
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-yellow-50 rounded-lg text-sm text-yellow-800">
+                      Focus on tailoring resumes to job descriptions to improve your interview rate.
+                    </div>
+                  )}
+                  <div className="p-3 bg-blue-50 rounded-lg text-sm text-blue-800">
+                    {analytics.totals.offer > 0
+                      ? `Congratulations on ${analytics.totals.offer} offer${analytics.totals.offer > 1 ? "s" : ""}!`
+                      : "Use Smart Interview Prep to build confidence before your next interview."}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

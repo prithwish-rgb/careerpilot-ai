@@ -12,6 +12,7 @@ import {
   CheckCircle,
   XCircle,
   TrendingUp,
+  Briefcase,
   Link as LinkIcon,
   Eye,
 } from "lucide-react";
@@ -23,7 +24,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { PageLoading, ButtonLoading } from "@/components/ui/loading-spinner";
 import { Tooltip } from "@/components/ui/tooltip";
-import { MODAL_CONTENT_CLASS } from "@/lib/modal-styles";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { EmptyState } from "@/components/EmptyState";
+import { MODAL_CONTENT_CLASS, PAGE_CONTAINER_CLASS, SECTION_HEADER_CLASS, SECTION_SUBTITLE_CLASS } from "@/lib/modal-styles";
 
 interface Job {
   _id: string;
@@ -58,7 +61,10 @@ export default function JobsPage() {
   const [viewingJob, setViewingJob] = useState<Job | null>(null);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Job | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
 
   useEffect(() => {
@@ -86,16 +92,16 @@ export default function JobsPage() {
 
   const fetchJobs = async () => {
     try {
-      setError(null);
+      setFetchError(null);
       const res = await fetch("/api/jobs");
       if (!res.ok) {
-        throw new Error(`Failed to fetch jobs: ${res.statusText}`);
+        throw new Error("Failed to fetch jobs");
       }
       const data = await res.json();
-      setJobs(data.data || []);
+      setJobs(data.data ?? []);
     } catch (error) {
       console.error("Failed to fetch jobs:", error);
-      setError(error instanceof Error ? error.message : 'Failed to fetch jobs');
+      setFetchError("Unable to load jobs. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -104,9 +110,9 @@ export default function JobsPage() {
   const handleAddJob = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
-    setError(null);
+    setFormError(null);
     if (!formData.url && !formData.emailText && (!formData.title || !formData.company)) {
-      setError("Title and Company are required for manual entry.");
+      setFormError("Title and Company are required for manual entry.");
       setIsSubmitting(false);
       return;
     }
@@ -132,7 +138,7 @@ export default function JobsPage() {
       setFormData({ title: "", company: "", description: "", url: "", emailText: "", status: "saved" });
     } catch (error) {
       console.error("Failed to add job:", error);
-      setError(error instanceof Error ? error.message : 'Failed to add job');
+      setFormError(error instanceof Error ? error.message : "Failed to add job");
     } finally {
       setIsSubmitting(false);
     }
@@ -168,21 +174,24 @@ export default function JobsPage() {
     }
   };
 
-  const handleDeleteJob = async (jobId: string) => {
-    if (!confirm("Are you sure you want to delete this job?")) return;
-
+  const confirmDeleteJob = async () => {
+    if (!deleteTarget) return;
+    setIsDeleting(true);
     try {
       const res = await fetch("/api/jobs", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: jobId }),
+        body: JSON.stringify({ id: deleteTarget._id }),
       });
 
       if (res.ok) {
         await fetchJobs();
+        setDeleteTarget(null);
       }
     } catch (error) {
       console.error("Failed to delete job:", error);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -228,26 +237,26 @@ export default function JobsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#6C63FF]/5 via-[#00C9A7]/5 to-[#6C63FF]/5">
+    <div className={PAGE_CONTAINER_CLASS}>
       <div className="w-full mx-auto px-2 sm:px-4 py-4 sm:py-8">
-        {/* Error Banner */}
-        {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+        {fetchError && (
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl">
             <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+              <div className="w-2 h-2 bg-red-500 rounded-full" />
               <p className="text-red-800 text-sm">
-                <strong>Error:</strong> {error}
+                <strong>Unable to load jobs:</strong> {fetchError}
               </p>
-              <button onClick={() => setError(null)} className="ml-auto text-red-600 hover:text-red-800" aria-label="Dismiss">×</button>
+              <button onClick={() => { setLoading(true); fetchJobs(); }} className="ml-auto text-red-600 hover:text-red-800 text-sm font-medium">
+                Retry
+              </button>
             </div>
           </div>
         )}
         
-        {/* Header */}
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6 sm:mb-8">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">Job Applications</h1>
-            <p className="text-sm sm:text-base text-gray-600">Track and manage your job applications</p>
+            <h1 className={SECTION_HEADER_CLASS}>Job Applications</h1>
+            <p className={SECTION_SUBTITLE_CLASS}>Track and manage your job applications</p>
           </div>
           <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
             <DialogTrigger asChild>
@@ -261,9 +270,9 @@ export default function JobsPage() {
                 <DialogTitle>Add New Job Application</DialogTitle>
               </DialogHeader>
               <form onSubmit={handleAddJob} className="space-y-4">
-                {error && (
-                  <div className="p-3 bg-red-50 text-red-700 text-sm rounded-md border border-red-200">
-                    {error}
+                {formError && (
+                  <div className="p-3 bg-red-50 text-red-700 text-sm rounded-lg border border-red-200">
+                    {formError}
                   </div>
                 )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -379,44 +388,41 @@ export default function JobsPage() {
 
         {/* Jobs List */}
         <div className="grid gap-4">
-          {error && jobs.length === 0 ? (
+          {fetchError && jobs.length === 0 ? (
             <Card>
-              <CardContent className="text-center py-12">
-                <div className="text-red-400 mb-4">
-                  <XCircle className="h-12 w-12 mx-auto" />
-                </div>
-                <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  Failed to load jobs
-                </h3>
-                <p className="text-gray-500 mb-4">
-                  {error}
-                </p>
-                <Button onClick={() => { setLoading(true); fetchJobs(); }}>
-                  Try Again
-                </Button>
-              </CardContent>
+              <EmptyState
+                icon={XCircle}
+                title="Failed to load jobs"
+                description={fetchError}
+                action={
+                  <Button onClick={() => { setLoading(true); fetchJobs(); }}>Try Again</Button>
+                }
+              />
             </Card>
           ) : filteredJobs.length === 0 ? (
             <Card>
-              <CardContent className="text-center py-12">
-                <div className="text-gray-400 mb-4">
-                  <Search className="h-12 w-12 mx-auto" />
-                </div>
-                <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  {searchTerm || statusFilter !== "all" ? "No jobs found" : "No job applications yet"}
-                </h3>
-                <p className="text-gray-500 mb-4">
-                  {searchTerm || statusFilter !== "all" 
-                    ? "Try adjusting your search or filter criteria" 
-                    : "Start by adding your first job application"}
-                </p>
-                {!searchTerm && statusFilter === "all" && (
-                  <Button onClick={() => setIsAddDialogOpen(true)}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Your First Job
-                  </Button>
-                )}
-              </CardContent>
+              <EmptyState
+                icon={Briefcase}
+                title={searchTerm || statusFilter !== "all" ? "No jobs found" : "No saved jobs yet"}
+                description={
+                  searchTerm || statusFilter !== "all"
+                    ? "Try adjusting your search or filter criteria."
+                    : "You can continue creating a job application below."
+                }
+                helper={
+                  !searchTerm && statusFilter === "all"
+                    ? "Tip: Saved jobs will appear here for quick selection."
+                    : undefined
+                }
+                action={
+                  !searchTerm && statusFilter === "all" ? (
+                    <Button onClick={() => setIsAddDialogOpen(true)}>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Your First Job
+                    </Button>
+                  ) : undefined
+                }
+              />
             </Card>
           ) : (
             filteredJobs.map((job) => {
@@ -505,7 +511,7 @@ export default function JobsPage() {
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => handleDeleteJob(job._id)}
+                            onClick={() => setDeleteTarget(job)}
                             className="text-red-600 hover:text-red-700"
                             aria-label="Delete"
                           >
@@ -528,23 +534,27 @@ export default function JobsPage() {
               <DialogTitle>{viewingJob?.title || "Job Details"}</DialogTitle>
             </DialogHeader>
             {viewingJob && (
-              <div className="space-y-4 text-sm">
-                <div>
-                  <p className="font-medium text-gray-500">Company</p>
-                  <p className="text-gray-900">{viewingJob.company || "—"}</p>
-                </div>
-                <div>
-                  <p className="font-medium text-gray-500">Status</p>
-                  <p className="text-gray-900 capitalize">{viewingJob.status}</p>
+              <div className="space-y-5 text-sm">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-900">
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Company</p>
+                    <p className="text-gray-900 font-medium mt-1">{viewingJob.company || "—"}</p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-900">
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Status</p>
+                    <p className="text-gray-900 font-medium mt-1 capitalize">{viewingJob.status}</p>
+                  </div>
                 </div>
                 {viewingJob.description && (
                   <div>
-                    <p className="font-medium text-gray-500">Description</p>
-                    <p className="text-gray-700 whitespace-pre-wrap">{viewingJob.description}</p>
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Description</p>
+                    <p className="text-gray-700 whitespace-pre-wrap leading-relaxed max-h-60 overflow-y-auto p-3 rounded-lg border border-gray-100">
+                      {viewingJob.description}
+                    </p>
                   </div>
                 )}
                 {viewingJob.url && (
-                  <Button variant="outline" onClick={() => window.open(viewingJob.url, "_blank")}>
+                  <Button variant="outline" className="w-full sm:w-auto" onClick={() => window.open(viewingJob.url, "_blank")}>
                     <ExternalLink className="h-4 w-4 mr-2" />
                     Open Original Posting
                   </Button>
@@ -553,6 +563,16 @@ export default function JobsPage() {
             )}
           </DialogContent>
         </Dialog>
+
+        <ConfirmDialog
+          open={!!deleteTarget}
+          onOpenChange={(open) => !open && setDeleteTarget(null)}
+          title="Delete this job application?"
+          description="This action cannot be undone."
+          confirmLabel="Delete"
+          onConfirm={confirmDeleteJob}
+          loading={isDeleting}
+        />
 
         {/* Edit Dialog */}
         <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>

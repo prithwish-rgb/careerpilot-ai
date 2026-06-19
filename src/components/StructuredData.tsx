@@ -4,8 +4,8 @@ export function StructuredData() {
   const structuredData = {
     "@context": "https://schema.org",
     "@type": "WebApplication",
-    "name": "CareerPilot",
-    "alternateName": "Career Management Platform",
+    "name": "CareerPilot AI",
+    "alternateName": "Smart Career Management Platform",
     "description": "ATS optimization, resume intelligence, job tracking, and Smart Interview Prep — your complete career management platform.",
     "url": "https://ai-resume-tracker-lake.vercel.app",
     "applicationCategory": "BusinessApplication",

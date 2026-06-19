@@ -17,7 +17,13 @@ export async function POST(req: Request) {
 
     const { jobDescription, baseResumeId } = await req.json();
     if (!jobDescription?.trim()) {
-      return NextResponse.json({ error: "jobDescription is required" }, { status: 400 });
+      return NextResponse.json({ error: "Job description is required" }, { status: 400 });
+    }
+    if (jobDescription.trim().length < 20) {
+      return NextResponse.json(
+        { error: "Please provide a more detailed job description (at least 20 characters)." },
+        { status: 400 }
+      );
     }
 
     const col = await resumesCollection();
@@ -46,8 +52,12 @@ export async function POST(req: Request) {
     });
   } catch (e) {
     console.error("[tailor.POST]", e);
+    const msg = (e as Error).message?.toLowerCase() ?? "";
+    const isTransient = /429|quota|timeout|econn|fetch failed|5\d\d/i.test(msg);
     return NextResponse.json({
-      error: (e as Error).message || "Tailoring failed",
+      error: isTransient
+        ? "Unable to tailor your resume right now. Please try again later."
+        : "Unable to tailor your resume right now. Please try again later.",
       aiAvailable: isAIEnabled(),
     }, { status: 500 });
   }

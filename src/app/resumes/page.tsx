@@ -23,7 +23,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { ButtonLoading } from "@/components/ui/loading-spinner";
 import { LiveResumePreview } from "@/components/LiveResumePreview";
 import { IntelligencePanel } from "@/components/IntelligencePanel";
-import { MODAL_CONTENT_CLASS } from "@/lib/modal-styles";
+import { getTailorErrorMessage } from "@/lib/tailor-errors";
+import { MODAL_CONTENT_CLASS, PAGE_CONTAINER_CLASS, SECTION_HEADER_CLASS, SECTION_SUBTITLE_CLASS } from "@/lib/modal-styles";
 
 interface ResumeBlock {
   id: string;
@@ -130,19 +131,24 @@ export default function ResumesPage() {
           body: JSON.stringify({ name: data.name, blocks: data.blocks }),
         });
         
-        if (!createRes.ok) { alert("Failed to save tailored resume."); return; }
+        if (!createRes.ok) {
+          setTailorError("Unable to save tailored resume. Please try again.");
+          return;
+        }
         const { id, data: newData } = await createRes.json();
-        const fresh = await fetch("/api/resumes").then(r => r.json());
-        setResumes(fresh.data || []);
+        const freshRes = await fetch("/api/resumes");
+        if (freshRes.ok) {
+          const fresh = await freshRes.json();
+          setResumes(fresh.data || []);
+        }
         setSelectedResume({ _id: id, ...newData });
         setIsTailorDialogOpen(false);
         setTailorJobDescription("");
       } else {
-        setTailorError(data.error || "Failed to tailor resume. Check the job description and try again.");
+        setTailorError(getTailorErrorMessage(res.status, data));
       }
-    } catch (error) {
-      console.error("Failed to tailor resume:", error);
-      setTailorError("Network error while tailoring. Please try again.");
+    } catch {
+      setTailorError("Unable to tailor your resume right now. Please try again later.");
     } finally {
       setIsTailoring(false);
     }
@@ -319,13 +325,12 @@ export default function ResumesPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#6C63FF]/5 via-[#00C9A7]/5 to-[#6C63FF]/5">
+    <div className={PAGE_CONTAINER_CLASS}>
       <div className="container mx-auto px-4 py-8">
-        {/* Header */}
         <div className="flex justify-between items-center mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">Resume Builder</h1>
-            <p className="text-gray-600">Build, analyze, and optimize your resume with ATS intelligence</p>
+            <h1 className={SECTION_HEADER_CLASS}>Resume Builder</h1>
+            <p className={SECTION_SUBTITLE_CLASS}>Build, analyze, and optimize your resume with ATS intelligence</p>
           </div>
           <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
             <DialogTrigger asChild>
@@ -645,7 +650,7 @@ export default function ResumesPage() {
             </DialogHeader>
             <div className="space-y-4">
               <p className="text-sm text-gray-500">
-                Paste the job description below. CareerPilot will optimize your resume for relevant keywords and create a new tailored version.
+                Paste the job description below. CareerPilot AI will optimize your resume for relevant keywords and create a new tailored version.
               </p>
               {tailorError && (
                 <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">

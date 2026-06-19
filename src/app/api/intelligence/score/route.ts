@@ -25,12 +25,21 @@ export async function POST(req: Request) {
       resume = await col.findOne({ userId: uid } as never, { sort: { updatedAt: -1 } } as never);
     }
 
-    if (!resume?.blocks?.length) {
-      return NextResponse.json({ error: "No resume found" }, { status: 404 });
+    if (!resume) {
+      return NextResponse.json({ error: "Resume not found" }, { status: 404 });
+    }
+
+    if (!resume.blocks?.length) {
+      return NextResponse.json({
+        success: true,
+        empty: true,
+        message: "Add sections to your resume to run analysis.",
+        data: null,
+      });
     }
 
     const analytics = analyzeResume(resume.blocks);
-    return NextResponse.json({ data: analytics, resumeName: resume.name });
+    return NextResponse.json({ success: true, data: analytics, resumeName: resume.name });
   } catch (e) {
     console.error("[intelligence/score.POST]", e);
     return NextResponse.json({ error: "Analysis failed" }, { status: 500 });

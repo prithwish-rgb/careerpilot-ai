@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
               marginBottom: 20,
             }}
           >
-            CareerPilot
+            CareerPilot AI
           </div>
           <div
             style={{
@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
               lineHeight: 1.4,
             }}
           >
-            Career Management Platform
+            Smart Career Management Platform
           </div>
           <div
             style={{

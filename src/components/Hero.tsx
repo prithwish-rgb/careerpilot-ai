@@ -13,10 +13,10 @@ export function Hero() {
       <div className="relative z-10 grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
         <div>
           <p className="text-sm font-semibold uppercase tracking-wider text-[#6C63FF] mb-2">
-            Career Management Platform
+            Smart Career Management Platform
           </p>
           <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight">
-            CareerPilot
+            CareerPilot AI
           </h1>
           <p className="mt-4 text-gray-600 dark:text-gray-300 max-w-xl">
             ATS optimization, resume intelligence, job tracking, and interview prep — built to run at zero cost.

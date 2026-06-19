@@ -18,6 +18,10 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { PageLoading } from "@/components/ui/loading-spinner";
 import { DashboardSkeleton } from "@/components/DashboardSkeleton";
+import { CareerReadinessScore } from "@/components/CareerReadinessScore";
+import { calculateCareerReadiness } from "@/lib/readiness";
+import { loadInterviewStats } from "@/lib/interview-persistence";
+import { PAGE_CONTAINER_CLASS } from "@/lib/modal-styles";
 
 const Hero = dynamic(() => import("@/components/Hero").then(m => ({ default: m.Hero })), {
   loading: () => <div className="h-48 rounded-3xl bg-gray-100 animate-pulse" />,
@@ -38,6 +42,11 @@ interface Job {
   status: string;
   createdAt: string;
   updatedAt: string;
+}
+
+interface Resume {
+  _id: string;
+  blocks: { id: string }[];
 }
 
 interface Analytics {
@@ -100,22 +109,25 @@ const StatsGrid = memo(function StatsGrid({ analytics }: { analytics: Analytics 
 export default function Dashboard() {
   const { data: session, status } = useSession();
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [resumes, setResumes] = useState<Resume[]>([]);
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [isFetchingData, setIsFetchingData] = useState(false);
   const [dbError, setDbError] = useState(false);
+  const [interviewStats, setInterviewStats] = useState(loadInterviewStats());
 
   const loadDashboard = useCallback(async () => {
     setIsFetchingData(true);
     setDbError(false);
     try {
-      const [jobsRes, analyticsRes] = await Promise.all([
+      const [jobsRes, analyticsRes, resumesRes] = await Promise.all([
         fetch("/api/jobs"),
         fetch("/api/analytics"),
+        fetch("/api/resumes"),
       ]);
 
       if (jobsRes.ok) {
         const jobsData = await jobsRes.json();
-        setJobs(jobsData.data || []);
+        setJobs(jobsData.data ?? []);
       } else {
         setJobs([]);
         setDbError(true);
@@ -127,6 +139,11 @@ export default function Dashboard() {
         setAnalytics(null);
         setDbError(true);
       }
+
+      if (resumesRes.ok) {
+        const resumesData = await resumesRes.json();
+        setResumes(resumesData.data ?? []);
+      }
     } catch {
       setJobs([]);
       setAnalytics(null);
@@ -137,7 +154,10 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    if (status === "authenticated") loadDashboard();
+    if (status === "authenticated") {
+      loadDashboard();
+      setInterviewStats(loadInterviewStats());
+    }
   }, [status, loadDashboard]);
 
   const recentJobs = useMemo(() => jobs.slice(0, 5), [jobs]);
@@ -146,8 +166,20 @@ export default function Dashboard() {
     [analytics]
   );
 
+  const readiness = useMemo(() => {
+    const blockCount = resumes.reduce((n, r) => n + (r.blocks?.length ?? 0), 0);
+    return calculateCareerReadiness({
+      resumeCount: resumes.length,
+      resumeBlockCount: blockCount,
+      jobCount: jobs.length,
+      appliedCount: analytics?.totals.applied ?? jobs.filter((j) => j.status === "applied").length,
+      interviewCount: interviewStats.sessionsCompleted,
+      questionsPracticed: interviewStats.totalQuestionsPracticed,
+    });
+  }, [resumes, jobs, analytics, interviewStats]);
+
   if (status === "loading") {
-    return <PageLoading text="Loading CareerPilot..." />;
+    return <PageLoading text="Loading CareerPilot AI..." />;
   }
 
   if (status === "unauthenticated") {
@@ -156,9 +188,9 @@ export default function Dashboard() {
         <Card className="w-full max-w-md">
           <CardContent className="p-8 text-center">
             <p className="text-sm font-semibold uppercase tracking-wider text-[#6C63FF] mb-1">
-              Career Management Platform
+              Smart Career Management Platform
             </p>
-            <h1 className="text-2xl font-bold mb-2">Welcome to CareerPilot</h1>
+            <h1 className="text-2xl font-bold mb-2">Welcome to CareerPilot AI</h1>
             <p className="text-gray-600 mb-6">
               Sign in to optimize your resume, track applications, and prepare for interviews.
             </p>
@@ -173,17 +205,17 @@ export default function Dashboard() {
 
   if (isFetchingData && !analytics) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-[#6C63FF]/5 via-[#00C9A7]/5 to-[#6C63FF]/5 px-4 py-8">
+      <div className={`${PAGE_CONTAINER_CLASS} px-4 py-8`}>
         <DashboardSkeleton />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#6C63FF]/5 via-[#00C9A7]/5 to-[#6C63FF]/5">
+    <div className={PAGE_CONTAINER_CLASS}>
       <div className="w-full mx-auto px-2 sm:px-4 py-4 sm:py-8">
         {dbError && (
-          <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+          <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-xl">
             <p className="text-yellow-800 text-sm">
               <strong>Connection issue:</strong> Verify MONGODB_URI in your environment settings.
             </p>
@@ -215,7 +247,14 @@ export default function Dashboard() {
           />
         </div>
 
-        {analytics && <StatsGrid analytics={analytics} />}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8">
+          <div className="lg:col-span-2">
+            {analytics && <StatsGrid analytics={analytics} />}
+          </div>
+          <div>
+            <CareerReadinessScore readiness={readiness} />
+          </div>
+        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
           <div className="lg:col-span-2 order-2 lg:order-1">
@@ -245,7 +284,7 @@ export default function Dashboard() {
                     {recentJobs.map(job => (
                       <div
                         key={job._id}
-                        className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                        className="flex items-center justify-between p-4 border rounded-xl hover:bg-gray-50 dark:hover:bg-gray-900/50"
                       >
                         <div className="flex-1 min-w-0">
                           <h3 className="font-medium text-gray-900 truncate">

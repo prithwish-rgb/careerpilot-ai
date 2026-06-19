@@ -40,9 +40,9 @@ return (
       <div className="container mx-auto flex items-center justify-between px-6 py-4">
         {/* Logo */}
         <Link href="/" className="flex flex-col leading-tight">
-          <span className="text-2xl font-bold text-white tracking-wide">CareerPilot</span>
+          <span className="text-2xl font-bold text-white tracking-wide">CareerPilot AI</span>
           <span className="text-[10px] uppercase tracking-widest text-white/70 hidden sm:block">
-            Career Management Platform
+            Smart Career Management Platform
           </span>
         </Link>
 

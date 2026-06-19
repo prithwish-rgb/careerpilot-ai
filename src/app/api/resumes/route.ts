@@ -5,19 +5,25 @@ import { resumesCollection, ResumeBlock } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
 
 export async function GET() {
-  const session = await getServerSession(authOptions);
-  
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    const session = await getServerSession(authOptions);
+
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const userId = (session as { user?: { id?: string } }).user?.id;
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const resumes = await resumesCollection();
+    const list = await resumes.find({ userId }).sort({ updatedAt: -1 }).toArray();
+    return NextResponse.json({ success: true, data: list });
+  } catch (e) {
+    console.error("[resumes.GET]", e);
+    return NextResponse.json({ success: false, error: "Failed to load resumes" }, { status: 500 });
   }
-  
-  const userId = (session as any)?.user?.id;
-  if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  const resumes = await resumesCollection();
-  const list = await resumes.find({ userId }).sort({ updatedAt: -1 }).toArray();
-  return NextResponse.json({ data: list });
 }
 
 export async function POST(req: Request) {
