@@ -8,16 +8,17 @@ const isVercel = process.env.VERCEL === '1';
 
 const options = isProduction || isVercel ? {
   // Serverless optimized settings
-  serverSelectionTimeoutMS: 3000,
-  connectTimeoutMS: 3000, 
-  socketTimeoutMS: 10000,
-  maxPoolSize: 1, // Single connection for serverless
+  serverSelectionTimeoutMS: 10000,
+  connectTimeoutMS: 10000,
+  socketTimeoutMS: 20000,
+  maxPoolSize: 5,
   minPoolSize: 0,
-  maxIdleTimeMS: 5000,
-  waitQueueTimeoutMS: 5000,
+  maxIdleTimeMS: 10000,
+  waitQueueTimeoutMS: 10000,
   retryWrites: true,
-  retryReads: false,
+  retryReads: true,
   heartbeatFrequencyMS: 30000,
+  family: 4, // force IPv4 — avoids server selection timeouts where Atlas SRV resolves to an unreachable IPv6 address
 } : {
   // Development settings
   serverSelectionTimeoutMS: 15000,
